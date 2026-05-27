@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { ensureDefaultCategories } from '@/lib/categories'
 
 interface Household {
   id: string
@@ -16,6 +17,7 @@ interface Member {
   role: string
   profiles: {
     email: string
+    nickname: string | null
   } | null
 }
 
@@ -29,18 +31,24 @@ export default function SettingsPage() {
   const [householdName, setHouseholdName] = useState('')
   const [inviteCode, setInviteCode] = useState('')
   const [showInviteForm, setShowInviteForm] = useState(false)
+  const [myId, setMyId] = useState('')
+  const [nickname, setNickname] = useState('')
+  const [savingNickname, setSavingNickname] = useState(false)
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
+        setMyId(user.id)
 
-        const { data: memberData } = await supabase
+        const { data: memberRows } = await supabase
           .from('household_members')
-          .select('household_id')
+          .select('household_id, joined_at')
           .eq('user_id', user.id)
-          .single()
+          .order('joined_at', { ascending: false })
+
+        const memberData = memberRows?.[0]
 
         if (memberData) {
           // 기존 가계부가 있음
@@ -52,20 +60,36 @@ export default function SettingsPage() {
 
           const { data: membersData } = await supabase
             .from('household_members')
-            .select(`
-              id,
-              user_id,
-              role,
-              profiles (email)
-            `)
+            .select('id, user_id, role')
             .eq('household_id', memberData.household_id)
 
           if (householdData) setHousehold(householdData)
-          if (membersData) setMembers((membersData as unknown as Member[]) || [])
-        } else {
-          // 새로운 가계부 생성 필요
-          setShowNewHousehold(true)
+
+          if (membersData) {
+            const { data: profilesData } = await supabase
+              .from('profiles')
+              .select('*')
+              .in('id', membersData.map(m => m.user_id))
+
+            setMembers(
+              membersData.map(m => {
+                const profile = profilesData?.find(p => p.id === m.user_id)
+                return {
+                  id: m.id,
+                  user_id: m.user_id,
+                  role: m.role,
+                  profiles: profile
+                    ? { email: profile.email, nickname: profile.nickname ?? null }
+                    : null,
+                }
+              })
+            )
+
+            const me = profilesData?.find(p => p.id === user.id)
+            setNickname(me?.nickname ?? '')
+          }
         }
+        // 가계부가 없으면 선택 화면(생성 / 초대코드로 참여)이 표시됨
       } catch (error) {
         console.error('데이터 조회 실패:', error)
       } finally {
@@ -106,21 +130,7 @@ export default function SettingsPage() {
     })
 
     // 기본 카테고리 생성
-    const defaultCategories = [
-      { name: '급여', type: 'income', icon: '💰', is_default: true },
-      { name: '식비', type: 'expense', icon: '🍜', is_default: true },
-      { name: '교통', type: 'expense', icon: '🚗', is_default: true },
-      { name: '쇼핑', type: 'expense', icon: '🛍️', is_default: true },
-      { name: '카페', type: 'expense', icon: '☕', is_default: true },
-      { name: '기타', type: 'expense', icon: '📌', is_default: true },
-    ]
-
-    for (const cat of defaultCategories) {
-      await supabase.from('categories').insert({
-        household_id: newHousehold.id,
-        ...cat,
-      })
-    }
+    await ensureDefaultCategories(supabase, newHousehold.id)
 
     setHousehold(newHousehold)
     setShowNewHousehold(false)
@@ -163,6 +173,24 @@ export default function SettingsPage() {
     window.location.reload()
   }
 
+  const handleSaveNickname = async () => {
+    if (!myId) return
+    setSavingNickname(true)
+    const { error } = await supabase
+      .from('profiles')
+      .update({ nickname: nickname.trim() || null })
+      .eq('id', myId)
+    setSavingNickname(false)
+
+    if (error) {
+      alert('닉네임 저장 실패: ' + error.message)
+      return
+    }
+
+    alert('닉네임이 저장되었습니다')
+    window.location.reload()
+  }
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
@@ -188,8 +216,7 @@ export default function SettingsPage() {
       if (error) throw error
 
       alert('가계부가 삭제되었습니다')
-      setHousehold(null)
-      setShowNewHousehold(true)
+      window.location.reload()
     } catch (error) {
       console.error('삭제 실패:', error)
       alert('삭제 실패: ' + (error as any).message)
@@ -205,7 +232,7 @@ export default function SettingsPage() {
       <h1 className="text-2xl font-bold text-gray-900 mb-6">설정</h1>
 
       {/* 가계부 없음 */}
-      {!household && !showNewHousehold && (
+      {!household && !showNewHousehold && !showInviteForm && (
         <div className="space-y-3">
           <button
             onClick={() => setShowNewHousehold(true)}
@@ -290,13 +317,6 @@ export default function SettingsPage() {
       {/* 기존 가계부 정보 */}
       {household && (
         <div className="space-y-6">
-          <button
-            onClick={() => setShowNewHousehold(true)}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-lg"
-          >
-            + 새 가계부 추가
-          </button>
-
           <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
             <h2 className="text-lg font-bold text-gray-900 mb-2">{household.name}</h2>
             <div className="space-y-3">
@@ -320,6 +340,33 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          {/* 내 닉네임 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              내 닉네임
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                placeholder="예: 철수"
+                maxLength={20}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              />
+              <button
+                onClick={handleSaveNickname}
+                disabled={savingNickname}
+                className="px-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-medium rounded-lg whitespace-nowrap"
+              >
+                {savingNickname ? '저장 중' : '저장'}
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              거래 내역에 이메일 대신 닉네임이 표시됩니다
+            </p>
+          </div>
+
           {/* 멤버 목록 */}
           <div>
             <h3 className="font-bold text-gray-900 mb-3">멤버 ({members.length}명)</h3>
@@ -329,7 +376,12 @@ export default function SettingsPage() {
                   key={member.id}
                   className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                 >
-                  <p className="text-gray-900">{member.profiles?.email || '(unknown)'}</p>
+                  <p className="text-gray-900">
+                    {member.profiles?.nickname || member.profiles?.email || '(unknown)'}
+                    {member.user_id === myId && (
+                      <span className="text-xs text-gray-500 ml-1">(나)</span>
+                    )}
+                  </p>
                   {member.role === 'owner' && (
                     <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">
                       가계부주

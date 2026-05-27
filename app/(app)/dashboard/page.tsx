@@ -5,12 +5,13 @@ import { createClient } from '@/lib/supabase/client'
 
 interface Transaction {
   id: string
+  user_id: string
   type: 'income' | 'expense'
   amount: number
   memo: string
   date: string
   categories: { name: string; icon: string } | null
-  profiles: { email: string } | null
+  profiles: { email: string; nickname: string | null } | null
 }
 
 export default function DashboardPage() {
@@ -21,6 +22,10 @@ export default function DashboardPage() {
   })
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const n = new Date()
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
+  })
 
   useEffect(() => {
     const fetchData = async () => {
@@ -29,11 +34,13 @@ export default function DashboardPage() {
         if (!user) return
 
         // 사용자의 가계부 조회
-        const { data: members } = await supabase
+        const { data: memberRows } = await supabase
           .from('household_members')
-          .select('household_id')
+          .select('household_id, joined_at')
           .eq('user_id', user.id)
-          .single()
+          .order('joined_at', { ascending: false })
+
+        const members = memberRows?.[0]
 
         if (!members) return
 
@@ -45,18 +52,17 @@ export default function DashboardPage() {
           .from('transactions')
           .select(`
             id,
+            user_id,
             type,
             amount,
             memo,
             date,
-            categories (name, icon),
-            profiles (email)
+            categories (name, icon)
           `)
           .eq('household_id', members.household_id)
           .gte('date', `${monthStr}-01`)
           .lte('date', `${monthStr}-31`)
           .order('date', { ascending: false })
-          .limit(5)
 
         if (transData) {
           const income = transData
@@ -68,7 +74,24 @@ export default function DashboardPage() {
             .reduce((sum, t) => sum + (t.amount || 0), 0)
 
           setThisMonth({ income, expense })
-          setTransactions((transData as unknown as Transaction[]) || [])
+
+          const rows = transData as unknown as Transaction[]
+          const { data: profilesData } = await supabase
+            .from('profiles')
+            .select('*')
+            .in('id', [...new Set(rows.map(t => t.user_id))])
+
+          setTransactions(
+            rows.map(t => {
+              const profile = profilesData?.find(p => p.id === t.user_id)
+              return {
+                ...t,
+                profiles: profile
+                  ? { email: profile.email, nickname: profile.nickname ?? null }
+                  : null,
+              }
+            })
+          )
         }
       } catch (error) {
         console.error('데이터 조회 실패:', error)
@@ -85,6 +108,34 @@ export default function DashboardPage() {
   }
 
   const balance = thisMonth.income - thisMonth.expense
+
+  // 달력 계산
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = now.getMonth() // 0-indexed
+  const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`
+  const todayStr = `${monthPrefix}-${String(now.getDate()).padStart(2, '0')}`
+
+  const dailyTotals: Record<string, { income: number; expense: number }> = {}
+  for (const t of transactions) {
+    const d = dailyTotals[t.date] ?? { income: 0, expense: 0 }
+    if (t.type === 'income') d.income += t.amount
+    else d.expense += t.amount
+    dailyTotals[t.date] = d
+  }
+
+  const firstWeekday = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const cells: (number | null)[] = [
+    ...Array(firstWeekday).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ]
+
+  const short = (n: number) =>
+    n >= 10000 ? `${(n / 10000).toFixed(1).replace(/\.0$/, '')}만` : `${n}`
+
+  const selectedTransactions = transactions.filter(t => t.date === selectedDate)
+  const weekdays = ['일', '월', '화', '수', '목', '금', '토']
 
   return (
     <div className="p-4 max-w-md mx-auto">
@@ -113,14 +164,82 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 최근 거래 */}
+      {/* 달력 */}
+      <div className="mb-6">
+        <h2 className="text-lg font-bold text-gray-900 mb-3">
+          {year}년 {month + 1}월
+        </h2>
+
+        {/* 요일 헤더 */}
+        <div className="grid grid-cols-7 mb-1">
+          {weekdays.map((w, i) => (
+            <div
+              key={w}
+              className={`text-center text-xs font-medium py-1 ${
+                i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-500'
+              }`}
+            >
+              {w}
+            </div>
+          ))}
+        </div>
+
+        {/* 날짜 그리드 */}
+        <div className="grid grid-cols-7 gap-0.5">
+          {cells.map((day, idx) => {
+            if (day === null) return <div key={`blank-${idx}`} />
+
+            const dateStr = `${monthPrefix}-${String(day).padStart(2, '0')}`
+            const totals = dailyTotals[dateStr]
+            const isToday = dateStr === todayStr
+            const isSelected = dateStr === selectedDate
+
+            return (
+              <button
+                key={dateStr}
+                type="button"
+                onClick={() => setSelectedDate(dateStr)}
+                className={`aspect-square rounded-lg flex flex-col items-center justify-start pt-1 px-0.5 border transition ${
+                  isSelected
+                    ? 'border-indigo-500 bg-indigo-50'
+                    : 'border-transparent hover:bg-gray-50'
+                }`}
+              >
+                <span
+                  className={`text-xs ${
+                    isToday
+                      ? 'bg-indigo-600 text-white rounded-full w-5 h-5 flex items-center justify-center'
+                      : 'text-gray-900'
+                  }`}
+                >
+                  {day}
+                </span>
+                {totals?.expense ? (
+                  <span className="text-[9px] leading-tight text-red-500 mt-0.5">
+                    -{short(totals.expense)}
+                  </span>
+                ) : null}
+                {totals?.income ? (
+                  <span className="text-[9px] leading-tight text-green-600">
+                    +{short(totals.income)}
+                  </span>
+                ) : null}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* 선택한 날짜의 거래 */}
       <div>
-        <h2 className="text-lg font-bold text-gray-900 mb-3">최근 거래</h2>
-        {transactions.length === 0 ? (
-          <p className="text-gray-500 text-center py-8">거래가 없습니다</p>
+        <h2 className="text-base font-bold text-gray-900 mb-3">
+          {Number(selectedDate.split('-')[1])}월 {Number(selectedDate.split('-')[2])}일 거래
+        </h2>
+        {selectedTransactions.length === 0 ? (
+          <p className="text-gray-500 text-center py-6 text-sm">이 날의 거래가 없습니다</p>
         ) : (
           <div className="space-y-2">
-            {transactions.map(trans => (
+            {selectedTransactions.map(trans => (
               <div
                 key={trans.id}
                 className="flex items-center justify-between py-3 border-b border-gray-100"
@@ -130,7 +249,7 @@ export default function DashboardPage() {
                     {trans.categories?.icon} {trans.categories?.name}
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {trans.profiles?.email.split('@')[0]} · {trans.date}
+                    {trans.profiles?.nickname || trans.profiles?.email.split('@')[0]}
                   </p>
                   {trans.memo && (
                     <p className="text-xs text-gray-600 mt-0.5">{trans.memo}</p>

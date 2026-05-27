@@ -53,11 +53,13 @@ export default function StatsPage() {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
-        const { data: members } = await supabase
+        const { data: memberRows } = await supabase
           .from('household_members')
-          .select('household_id')
+          .select('household_id, joined_at')
           .eq('user_id', user.id)
-          .single()
+          .order('joined_at', { ascending: false })
+
+        const members = memberRows?.[0]
 
         if (!members) return
 

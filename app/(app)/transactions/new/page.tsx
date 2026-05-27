@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { sortByDefaultOrder } from '@/lib/categories'
 
 interface Category {
   id: string
@@ -30,11 +31,13 @@ export default function NewTransactionPage() {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
-        const { data: members } = await supabase
+        const { data: memberRows } = await supabase
           .from('household_members')
-          .select('household_id')
+          .select('household_id, joined_at')
           .eq('user_id', user.id)
-          .single()
+          .order('joined_at', { ascending: false })
+
+        const members = memberRows?.[0]
 
         if (!members) {
           router.push('/settings')
@@ -50,9 +53,10 @@ export default function NewTransactionPage() {
           .order('is_default', { ascending: false })
 
         if (catData) {
-          setCategories(catData as Category[])
+          const sorted = sortByDefaultOrder(catData as Category[])
+          setCategories(sorted)
           // 첫 번째 같은 타입의 카테고리 선택
-          const defaultCat = catData.find(c => c.type === 'expense')
+          const defaultCat = sorted.find(c => c.type === 'expense')
           if (defaultCat) setSelectedCategory(defaultCat.id)
         }
       } catch (error) {

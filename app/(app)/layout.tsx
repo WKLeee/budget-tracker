@@ -3,6 +3,7 @@
 import { useRouter, usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { ensureDefaultCategories } from '@/lib/categories'
 import Link from 'next/link'
 
 export default function AppLayout({
@@ -16,15 +17,30 @@ export default function AppLayout({
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const checkAuth = async () => {
+    const init = async () => {
       const { data: { session }, error } = await supabase.auth.getSession()
       if (!session || error) {
         router.push('/login')
+        setIsLoading(false)
+        return
       }
+
+      // 현재 가계부에 누락된 기본 카테고리 자동 동기화
+      const { data: memberRows } = await supabase
+        .from('household_members')
+        .select('household_id, joined_at')
+        .eq('user_id', session.user.id)
+        .order('joined_at', { ascending: false })
+
+      const householdId = memberRows?.[0]?.household_id
+      if (householdId) {
+        await ensureDefaultCategories(supabase, householdId)
+      }
+
       setIsLoading(false)
     }
 
-    checkAuth()
+    init()
   }, [router, supabase])
 
   if (isLoading) {
