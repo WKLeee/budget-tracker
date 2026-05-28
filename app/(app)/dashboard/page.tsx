@@ -200,16 +200,16 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-            <p className="text-xs text-gray-600">수입</p>
-            <p className="text-lg font-bold text-green-600 mt-1">
-              +{thisMonth.income.toLocaleString()}원
-            </p>
-          </div>
           <div className="bg-red-50 border border-red-200 rounded-lg p-3">
             <p className="text-xs text-gray-600">지출</p>
             <p className="text-lg font-bold text-red-600 mt-1">
               -{thisMonth.expense.toLocaleString()}원
+            </p>
+          </div>
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+            <p className="text-xs text-gray-600">수입</p>
+            <p className="text-lg font-bold text-green-600 mt-1">
+              +{thisMonth.income.toLocaleString()}원
             </p>
           </div>
         </div>

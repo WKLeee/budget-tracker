@@ -29,7 +29,9 @@ export default function NewTransactionPage() {
   const [schedTitle, setSchedTitle] = useState('')
   const [schedMemo, setSchedMemo] = useState('')
   const [schedCategory, setSchedCategory] = useState('general')
-  const [schedRecurrence, setSchedRecurrence] = useState<'none' | 'weekly' | 'monthly'>('none')
+  const [schedRecurrence, setSchedRecurrence] = useState<
+    'none' | 'weekly' | 'monthly' | 'yearly'
+  >('none')
 
   useEffect(() => {
     const fetchData = async () => {
@@ -186,28 +188,30 @@ export default function NewTransactionPage() {
       </h1>
 
       {/* 모드 토글: 거래 / 일정 */}
-      <div className="flex gap-2 mb-6 p-1 bg-gray-100 rounded-lg">
+      <div className="grid grid-cols-2 gap-3 mb-6">
         <button
           type="button"
           onClick={() => setMode('transaction')}
-          className={`flex-1 py-2 rounded-md text-sm font-medium transition ${
+          className={`flex items-center justify-center gap-2 py-3 rounded-lg text-base font-semibold transition ${
             mode === 'transaction'
-              ? 'bg-white text-gray-900 shadow-sm'
-              : 'text-gray-600'
+              ? 'bg-indigo-600 text-white shadow-md'
+              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
           }`}
         >
-          거래
+          <span className="text-lg">💰</span>
+          <span>거래</span>
         </button>
         <button
           type="button"
           onClick={() => setMode('schedule')}
-          className={`flex-1 py-2 rounded-md text-sm font-medium transition ${
+          className={`flex items-center justify-center gap-2 py-3 rounded-lg text-base font-semibold transition ${
             mode === 'schedule'
-              ? 'bg-white text-gray-900 shadow-sm'
-              : 'text-gray-600'
+              ? 'bg-indigo-600 text-white shadow-md'
+              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
           }`}
         >
-          일정
+          <span className="text-lg">📅</span>
+          <span>일정</span>
         </button>
       </div>
 
@@ -226,7 +230,7 @@ export default function NewTransactionPage() {
                   }}
                   className={`flex-1 py-2 rounded-lg font-medium transition ${
                     transactionType === 'expense'
-                      ? 'bg-gray-900 text-white'
+                      ? 'bg-red-700 text-white'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
@@ -330,19 +334,25 @@ export default function NewTransactionPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">반복</label>
-              <div className="flex gap-2">
-                {(['none', 'weekly', 'monthly'] as const).map(r => (
+              <div className="grid grid-cols-4 gap-2">
+                {(['none', 'weekly', 'monthly', 'yearly'] as const).map(r => (
                   <button
                     key={r}
                     type="button"
                     onClick={() => setSchedRecurrence(r)}
-                    className={`flex-1 py-2 rounded-lg text-sm font-medium border transition ${
+                    className={`py-2 rounded-lg text-sm font-medium border transition ${
                       schedRecurrence === r
                         ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
                         : 'border-gray-200 text-gray-700 hover:bg-gray-50'
                     }`}
                   >
-                    {r === 'none' ? '한 번' : r === 'weekly' ? '매주' : '매월'}
+                    {r === 'none'
+                      ? '한 번'
+                      : r === 'weekly'
+                      ? '매주'
+                      : r === 'monthly'
+                      ? '매월'
+                      : '매년'}
                   </button>
                 ))}
               </div>
@@ -350,7 +360,9 @@ export default function NewTransactionPage() {
                 <p className="text-xs text-gray-500 mt-2">
                   {schedRecurrence === 'weekly'
                     ? '선택한 요일마다 반복돼요'
-                    : '매월 같은 날짜마다 반복돼요'}
+                    : schedRecurrence === 'monthly'
+                    ? '매월 같은 날짜마다 반복돼요'
+                    : '매년 같은 날짜마다 반복돼요'}
                 </p>
               )}
             </div>

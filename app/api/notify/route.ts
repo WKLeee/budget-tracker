@@ -53,7 +53,13 @@ export async function POST(request: Request) {
     // "{이름}님이 일정 추가 📌 {제목} (매월)"
     const { scheduleTitle, scheduleIcon, recurrence, date } = body
     const recLabel =
-      recurrence === 'weekly' ? '매주' : recurrence === 'monthly' ? '매월' : ''
+      recurrence === 'weekly'
+        ? '매주'
+        : recurrence === 'monthly'
+        ? '매월'
+        : recurrence === 'yearly'
+        ? '매년'
+        : ''
     const dateLabel = typeof date === 'string' ? date.slice(5).replace('-', '/') : ''
     const suffix = recLabel || dateLabel
     title = [

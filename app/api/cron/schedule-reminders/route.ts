@@ -38,6 +38,7 @@ export async function GET(request: Request) {
   const today = kstNow.toISOString().slice(0, 10)
   const todayDow = kstNow.getUTCDay() // 0=일 ~ 6=토
   const todayDay = kstNow.getUTCDate() // 1~31
+  const todayMonth = kstNow.getUTCMonth() // 0~11
 
   const [oneTimeRes, recurringRes] = await Promise.all([
     admin
@@ -49,7 +50,7 @@ export async function GET(request: Request) {
     admin
       .from('schedules')
       .select('id, title, household_id, recurrence, date')
-      .in('recurrence', ['weekly', 'monthly'])
+      .in('recurrence', ['weekly', 'monthly', 'yearly'])
       .lte('date', today),
   ])
 
@@ -70,6 +71,8 @@ export async function GET(request: Request) {
     const start = new Date(s.date + 'T00:00:00Z')
     if (s.recurrence === 'weekly') return start.getUTCDay() === todayDow
     if (s.recurrence === 'monthly') return start.getUTCDate() === todayDay
+    if (s.recurrence === 'yearly')
+      return start.getUTCMonth() === todayMonth && start.getUTCDate() === todayDay
     return false
   })
 
