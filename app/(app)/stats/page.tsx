@@ -35,6 +35,18 @@ interface CategoryChartData {
   value: number
 }
 
+interface Insights {
+  selTotal: number
+  prevTotal: number
+  totalChangePct: number | null
+  dailyAvg: number
+  projection: number | null
+  topCategoryChanges: { name: string; diffPct: number; sel: number; prev: number }[]
+  isCurrentMonth: boolean
+  daysPassed: number
+  daysInMonth: number
+}
+
 export default function StatsPage() {
   const supabase = createClient()
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -43,6 +55,7 @@ export default function StatsPage() {
   })
   const [chartData, setChartData] = useState<ChartData[]>([])
   const [categoryData, setCategoryData] = useState<CategoryChartData[]>([])
+  const [insights, setInsights] = useState<Insights | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   const COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#8b5cf6']
@@ -128,6 +141,68 @@ export default function StatsPage() {
             .sort((a, b) => b.value - a.value)
 
           setCategoryData(categoryDataFormatted)
+
+          // 인사이트 계산
+          const selY = Number(year)
+          const selM = Number(month)
+          const prevDate = new Date(selY, selM - 2, 1)
+          const prevPrefix = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`
+
+          const prevTransactions = (allTransactions as unknown as Transaction[]).filter(
+            t => t.date.startsWith(prevPrefix) && t.type === 'expense'
+          )
+
+          const selTotal = monthTransactions.reduce((s, t) => s + (t.amount || 0), 0)
+          const prevTotal = prevTransactions.reduce((s, t) => s + (t.amount || 0), 0)
+          const totalChangePct =
+            prevTotal > 0 ? ((selTotal - prevTotal) / prevTotal) * 100 : null
+
+          // 카테고리별 변화
+          const prevByCat: Record<string, number> = {}
+          prevTransactions.forEach(t => {
+            const n = t.categories?.name || '기타'
+            prevByCat[n] = (prevByCat[n] || 0) + (t.amount || 0)
+          })
+          const allCatNames = new Set([
+            ...Object.keys(categoryTotals),
+            ...Object.keys(prevByCat),
+          ])
+          const topCategoryChanges = Array.from(allCatNames)
+            .map(name => {
+              const sel = categoryTotals[name] || 0
+              const prev = prevByCat[name] || 0
+              const diffPct =
+                prev > 0 ? ((sel - prev) / prev) * 100 : sel > 0 ? Infinity : 0
+              return { name, sel, prev, diffPct }
+            })
+            .filter(c => c.sel > 0 || c.prev > 0)
+            .sort((a, b) => {
+              const aMag = a.diffPct === Infinity ? Number.MAX_SAFE_INTEGER : Math.abs(a.diffPct)
+              const bMag = b.diffPct === Infinity ? Number.MAX_SAFE_INTEGER : Math.abs(b.diffPct)
+              return bMag - aMag
+            })
+            .slice(0, 3)
+
+          // 일 평균 + 월말 예상
+          const now = new Date()
+          const isCurrentMonth =
+            selY === now.getFullYear() && selM === now.getMonth() + 1
+          const daysInMonth = new Date(selY, selM, 0).getDate()
+          const daysPassed = isCurrentMonth ? now.getDate() : daysInMonth
+          const dailyAvg = daysPassed > 0 ? selTotal / daysPassed : 0
+          const projection = isCurrentMonth ? dailyAvg * daysInMonth : null
+
+          setInsights({
+            selTotal,
+            prevTotal,
+            totalChangePct,
+            dailyAvg,
+            projection,
+            topCategoryChanges,
+            isCurrentMonth,
+            daysPassed,
+            daysInMonth,
+          })
         }
       } catch (error) {
         console.error('통계 조회 실패:', error)
@@ -151,9 +226,94 @@ export default function StatsPage() {
     return <div className="p-4">로딩 중...</div>
   }
 
+  const fmt = (n: number) => Math.round(n).toLocaleString()
+
   return (
     <div className="p-4 max-w-md mx-auto pb-24">
       <h1 className="text-2xl font-bold text-gray-900 mb-4">통계</h1>
+
+      {/* 인사이트 */}
+      {insights && insights.selTotal > 0 && (
+        <div className="bg-white p-4 rounded-lg border border-gray-200 mb-6 space-y-3">
+          <h2 className="font-bold text-gray-900">💡 이번 달 인사이트</h2>
+
+          {/* 지난달 대비 변화 */}
+          {insights.totalChangePct !== null && (
+            <div className="flex items-center justify-between py-2 border-b border-gray-100">
+              <span className="text-sm text-gray-700">지난달 대비</span>
+              <span
+                className={`text-sm font-bold ${
+                  insights.totalChangePct > 0
+                    ? 'text-red-600'
+                    : insights.totalChangePct < 0
+                    ? 'text-green-600'
+                    : 'text-gray-600'
+                }`}
+              >
+                {insights.totalChangePct > 0 ? '▲' : insights.totalChangePct < 0 ? '▼' : '='}{' '}
+                {Math.abs(insights.totalChangePct).toFixed(0)}%
+                <span className="text-gray-500 font-normal ml-2">
+                  ({fmt(insights.selTotal - insights.prevTotal)}원)
+                </span>
+              </span>
+            </div>
+          )}
+
+          {/* 일 평균 + 예상 */}
+          <div className="flex items-center justify-between py-2 border-b border-gray-100">
+            <span className="text-sm text-gray-700">
+              일 평균 지출{' '}
+              <span className="text-xs text-gray-400">
+                ({insights.daysPassed}일)
+              </span>
+            </span>
+            <span className="text-sm font-bold text-gray-900">{fmt(insights.dailyAvg)}원</span>
+          </div>
+
+          {insights.projection !== null && (
+            <div className="flex items-center justify-between py-2 border-b border-gray-100">
+              <span className="text-sm text-gray-700">월말 예상 지출</span>
+              <span className="text-sm font-bold text-indigo-600">
+                {fmt(insights.projection)}원
+              </span>
+            </div>
+          )}
+
+          {/* 카테고리 변화 Top 3 */}
+          {insights.topCategoryChanges.length > 0 && (
+            <div className="pt-1">
+              <p className="text-xs text-gray-500 mb-2">카테고리 변화 (지난달 대비)</p>
+              <div className="space-y-1">
+                {insights.topCategoryChanges.map(c => (
+                  <div key={c.name} className="flex items-center justify-between text-sm">
+                    <span className="text-gray-900">{c.name}</span>
+                    <span
+                      className={`font-medium ${
+                        c.diffPct === Infinity
+                          ? 'text-red-600'
+                          : c.diffPct > 0
+                          ? 'text-red-600'
+                          : c.diffPct < 0
+                          ? 'text-green-600'
+                          : 'text-gray-600'
+                      }`}
+                    >
+                      {c.diffPct === Infinity
+                        ? '신규'
+                        : c.sel === 0
+                        ? '없음'
+                        : `${c.diffPct > 0 ? '▲' : '▼'} ${Math.abs(c.diffPct).toFixed(0)}%`}
+                      <span className="text-gray-400 font-normal ml-2 text-xs">
+                        {fmt(c.sel)}원
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 월별 수입/지출 차트 */}
       <div className="bg-white p-4 rounded-lg border border-gray-200 mb-6">
