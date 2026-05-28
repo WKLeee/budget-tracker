@@ -173,32 +173,19 @@ export default function SettingsPage() {
 
   const handleJoinHousehold = async (e: React.FormEvent) => {
     e.preventDefault()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user || !inviteCode) return
+    if (!inviteCode) return
 
-    const { data: householdData } = await supabase
-      .from('households')
-      .select('id')
-      .eq('invite_code', inviteCode.toUpperCase())
-      .single()
-
-    if (!householdData) {
-      alert('유효하지 않은 초대코드입니다')
-      return
-    }
-
-    const { error } = await supabase.from('household_members').insert({
-      household_id: householdData.id,
-      user_id: user.id,
-      role: 'member',
+    // RLS상 비멤버는 households를 조회할 수 없으므로, 가입은 SECURITY DEFINER 함수로 처리
+    const { data: hid, error } = await supabase.rpc('join_household', {
+      p_invite_code: inviteCode.toUpperCase(),
     })
 
     if (error) {
-      if (error.message.includes('duplicate')) {
-        alert('이미 이 가계부에 참여 중입니다')
-      } else {
-        alert('참여 실패: ' + error.message)
-      }
+      alert('참여 실패: ' + error.message)
+      return
+    }
+    if (!hid) {
+      alert('유효하지 않은 초대코드입니다')
       return
     }
 

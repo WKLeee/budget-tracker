@@ -32,8 +32,12 @@ export async function middleware(request: NextRequest) {
 
     const { data: { session } } = await supabase.auth.getSession()
 
-    // /dashboard, /transactions 등 보호된 라우트
-    if (!session && request.nextUrl.pathname.startsWith('/(app)')) {
+    // 보호된 라우트 (라우트 그룹 (app)은 실제 경로에 안 나타나므로 실제 경로로 체크)
+    const protectedPaths = ['/dashboard', '/transactions', '/stats', '/budget', '/settings']
+    const isProtected = protectedPaths.some((p) =>
+      request.nextUrl.pathname.startsWith(p)
+    )
+    if (!session && isProtected) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
 
