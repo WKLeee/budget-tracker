@@ -226,7 +226,12 @@ export default function SettingsPage() {
 
   const handleDeleteHousehold = async () => {
     if (!household) return
-    if (!window.confirm(`"${household.name}" 가계부를 삭제하시겠습니까?\n(모든 데이터가 삭제됩니다)`)) return
+    const iAmOwner = members.find(m => m.user_id === myId)?.role === 'owner'
+    if (!iAmOwner) {
+      alert('가계부 삭제는 가계부주만 가능합니다.')
+      return
+    }
+    if (!window.confirm(`"${household.name}" 가계부를 삭제하시겠습니까?\n모든 거래/일정/예산이 영구 삭제됩니다.`)) return
 
     try {
       const { error } = await supabase
@@ -240,7 +245,33 @@ export default function SettingsPage() {
       window.location.reload()
     } catch (error) {
       console.error('삭제 실패:', error)
-      alert('삭제 실패: ' + (error as any).message)
+      alert('삭제 실패: ' + (error as Error).message)
+    }
+  }
+
+  const handleLeaveHousehold = async () => {
+    if (!household) return
+    const myMembership = members.find(m => m.user_id === myId)
+    if (!myMembership) return
+    if (myMembership.role === 'owner') {
+      alert('가계부주는 나갈 수 없습니다. 가계부 삭제를 사용하거나 다른 멤버에게 권한을 넘기세요.')
+      return
+    }
+    if (!window.confirm(`"${household.name}" 가계부에서 나가시겠습니까?\n내가 기록한 거래/일정은 가계부에 그대로 남습니다.`)) return
+
+    try {
+      const { error } = await supabase
+        .from('household_members')
+        .delete()
+        .eq('id', myMembership.id)
+
+      if (error) throw error
+
+      alert('가계부에서 나왔습니다')
+      window.location.reload()
+    } catch (error) {
+      console.error('나가기 실패:', error)
+      alert('나가기 실패: ' + (error as Error).message)
     }
   }
 
@@ -469,13 +500,22 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* 가계부 삭제 */}
-          <button
-            onClick={handleDeleteHousehold}
-            className="w-full text-red-600 hover:text-red-700 font-medium py-2 border border-red-300 rounded-lg hover:bg-red-50"
-          >
-            가계부 삭제
-          </button>
+          {/* 가계부 삭제 (가계부주) / 나가기 (일반 멤버) */}
+          {members.find(m => m.user_id === myId)?.role === 'owner' ? (
+            <button
+              onClick={handleDeleteHousehold}
+              className="w-full text-red-600 hover:text-red-700 font-medium py-2 border border-red-300 rounded-lg hover:bg-red-50"
+            >
+              가계부 삭제
+            </button>
+          ) : (
+            <button
+              onClick={handleLeaveHousehold}
+              className="w-full text-gray-700 hover:text-gray-900 font-medium py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              가계부 나가기
+            </button>
+          )}
         </div>
       )}
 
