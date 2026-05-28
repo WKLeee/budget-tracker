@@ -98,6 +98,19 @@ export default function NewTransactionPage() {
         return
       }
 
+      // 다른 멤버에게 푸시 알림 (실패해도 저장에는 영향 없음)
+      const catName = categories.find(c => c.id === selectedCategory)?.name
+      fetch('/api/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          householdId,
+          amount: Math.round(Number(amount)),
+          type: transactionType,
+          category: catName,
+        }),
+      }).catch(() => {})
+
       router.push('/dashboard')
     } catch (error) {
       console.error('거래 저장 실패:', error)

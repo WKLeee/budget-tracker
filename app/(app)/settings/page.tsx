@@ -4,6 +4,12 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ensureDefaultCategories } from '@/lib/categories'
+import {
+  isPushSupported,
+  isSubscribed,
+  subscribeToPush,
+  unsubscribeFromPush,
+} from '@/lib/push'
 
 interface Household {
   id: string
@@ -34,6 +40,9 @@ export default function SettingsPage() {
   const [myId, setMyId] = useState('')
   const [nickname, setNickname] = useState('')
   const [savingNickname, setSavingNickname] = useState(false)
+  const [pushSupported, setPushSupported] = useState(false)
+  const [pushOn, setPushOn] = useState(false)
+  const [pushBusy, setPushBusy] = useState(false)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -99,6 +108,31 @@ export default function SettingsPage() {
 
     fetchData()
   }, [supabase])
+
+  useEffect(() => {
+    setPushSupported(isPushSupported())
+    isSubscribed()
+      .then(setPushOn)
+      .catch(() => {})
+  }, [])
+
+  const handleTogglePush = async () => {
+    if (!household || !myId) return
+    setPushBusy(true)
+    try {
+      if (pushOn) {
+        await unsubscribeFromPush(supabase)
+        setPushOn(false)
+      } else {
+        await subscribeToPush(supabase, myId, household.id)
+        setPushOn(true)
+      }
+    } catch (e) {
+      alert((e as Error).message)
+    } finally {
+      setPushBusy(false)
+    }
+  }
 
   const handleCreateHousehold = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -366,6 +400,26 @@ export default function SettingsPage() {
               거래 내역에 이메일 대신 닉네임이 표시됩니다
             </p>
           </div>
+
+          {/* 알림 */}
+          {pushSupported && (
+            <div>
+              <button
+                onClick={handleTogglePush}
+                disabled={pushBusy}
+                className={`w-full font-medium py-3 rounded-lg border transition disabled:opacity-50 ${
+                  pushOn
+                    ? 'border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100'
+                    : 'border-gray-300 text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                {pushBusy ? '처리 중...' : pushOn ? '🔔 알림 켜짐 (끄기)' : '🔕 알림 받기'}
+              </button>
+              <p className="text-xs text-gray-500 mt-1">
+                멤버가 거래를 추가하면 푸시 알림을 받습니다
+              </p>
+            </div>
+          )}
 
           {/* 멤버 목록 */}
           <div>
