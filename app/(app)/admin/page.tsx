@@ -14,6 +14,7 @@ interface Stats {
   recurring_count: number
   push_count: number
   recent_users: { email: string; created_at: string }[]
+  recent_active_users?: { email: string; last_sign_in_at: string }[]
 }
 
 function fmtBytes(b: number) {
@@ -21,6 +22,17 @@ function fmtBytes(b: number) {
   if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`
   if (b < 1024 * 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`
   return `${(b / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+function fmtDateTime(value: string) {
+  return new Date(value).toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
 }
 
 const SUPABASE_FREE_DB_LIMIT = 500 * 1024 * 1024 // 500MB
@@ -69,6 +81,7 @@ export default function AdminPage() {
   if (!stats) return null
 
   const dbPct = (stats.db_size_bytes / SUPABASE_FREE_DB_LIMIT) * 100
+  const recentActiveUsers = stats.recent_active_users ?? []
 
   return (
     <div className="p-4 max-w-md mx-auto pb-24">
@@ -105,7 +118,7 @@ export default function AdminPage() {
 
       {/* 최근 가입자 */}
       <div className="bg-white p-4 rounded-lg border border-gray-200 mb-4">
-        <h2 className="font-bold text-gray-900 mb-3">최근 가입 (최신 5명)</h2>
+        <h2 className="font-bold text-gray-900 mb-3">최근 가입 (최신 10명)</h2>
         {stats.recent_users.length === 0 ? (
           <p className="text-sm text-gray-500">데이터 없음</p>
         ) : (
@@ -114,7 +127,26 @@ export default function AdminPage() {
               <div key={u.email + u.created_at} className="flex justify-between text-sm">
                 <span className="text-gray-900 truncate">{u.email}</span>
                 <span className="text-xs text-gray-500 whitespace-nowrap ml-2">
-                  {new Date(u.created_at).toLocaleDateString('ko-KR')}
+                  {fmtDateTime(u.created_at)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 최근 활동 계정 */}
+      <div className="bg-white p-4 rounded-lg border border-gray-200 mb-4">
+        <h2 className="font-bold text-gray-900 mb-3">최근 활동 계정 (최신 10명)</h2>
+        {recentActiveUsers.length === 0 ? (
+          <p className="text-sm text-gray-500">데이터 없음</p>
+        ) : (
+          <div className="space-y-2">
+            {recentActiveUsers.map(u => (
+              <div key={u.email + u.last_sign_in_at} className="flex justify-between text-sm">
+                <span className="text-gray-900 truncate">{u.email}</span>
+                <span className="text-xs text-gray-500 whitespace-nowrap ml-2">
+                  {fmtDateTime(u.last_sign_in_at)}
                 </span>
               </div>
             ))}

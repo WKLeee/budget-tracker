@@ -12,6 +12,40 @@ function isAdminEmail(email: string | undefined | null): boolean {
   return adminEmails.includes(email.toLowerCase())
 }
 
+async function getUserActivitySummaries(url: string, serviceKey: string) {
+  const admin = createServiceClient(url, serviceKey)
+  const { data, error } = await admin.auth.admin.listUsers({
+    page: 1,
+    perPage: 100,
+  })
+
+  if (error) {
+    throw error
+  }
+
+  const recentUsers = data.users
+    .map(user => ({
+      email: user.email || '(no email)',
+      created_at: user.created_at,
+    }))
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+    .slice(0, 10)
+
+  const recentActiveUsers = data.users
+    .filter(user => user.last_sign_in_at)
+    .map(user => ({
+      email: user.email || '(no email)',
+      last_sign_in_at: user.last_sign_in_at!,
+    }))
+    .sort((a, b) => Date.parse(b.last_sign_in_at) - Date.parse(a.last_sign_in_at))
+    .slice(0, 10)
+
+  return {
+    recentUsers,
+    recentActiveUsers,
+  }
+}
+
 export async function GET() {
   const supabase = await createClient()
   const {
@@ -37,5 +71,17 @@ export async function GET() {
     return Response.json({ error: error.message }, { status: 500 })
   }
 
-  return Response.json(data)
+  try {
+    const { recentUsers, recentActiveUsers } = await getUserActivitySummaries(
+      url,
+      serviceKey
+    )
+    return Response.json({
+      ...data,
+      recent_users: recentUsers,
+      recent_active_users: recentActiveUsers,
+    })
+  } catch {
+    return Response.json(data)
+  }
 }
