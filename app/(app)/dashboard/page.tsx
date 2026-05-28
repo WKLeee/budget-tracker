@@ -62,7 +62,7 @@ export default function DashboardPage() {
           .from('schedules')
           .select('id, title, memo, date, category, recurrence')
           .eq('household_id', hid)
-          .in('recurrence', ['weekly', 'monthly'])
+          .in('recurrence', ['weekly', 'monthly', 'yearly'])
           .lte('date', monthEnd)
           .order('date'),
       ])
