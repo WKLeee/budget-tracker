@@ -40,6 +40,9 @@ export default function SettingsPage() {
   const [myId, setMyId] = useState('')
   const [nickname, setNickname] = useState('')
   const [savingNickname, setSavingNickname] = useState(false)
+  const [birthday, setBirthday] = useState('')
+  const [savingBirthday, setSavingBirthday] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [pushSupported, setPushSupported] = useState(false)
   const [pushOn, setPushOn] = useState(false)
   const [pushBusy, setPushBusy] = useState(false)
@@ -96,9 +99,53 @@ export default function SettingsPage() {
 
             const me = profilesData?.find(p => p.id === user.id)
             setNickname(me?.nickname ?? '')
+            // 생일: profile 우선, 없으면 user_metadata에서 가져와 자동 동기화
+            const profileBirthday = me?.birthday ?? null
+            const metaBirthday = (user.user_metadata as { birthday?: string } | null)?.birthday ?? null
+            if (profileBirthday) {
+              setBirthday(profileBirthday)
+            } else if (metaBirthday) {
+              setBirthday(metaBirthday)
+              // 회원가입 시 메타데이터에 있던 생일을 profile에 1회성 복사
+              await supabase
+                .from('profiles')
+                .update({ birthday: metaBirthday })
+                .eq('id', user.id)
+              // 매년 생일 일정도 자동 생성 (없을 때만)
+              const { data: existingSched } = await supabase
+                .from('schedules')
+                .select('id')
+                .eq('household_id', memberData.household_id)
+                .eq('user_id', user.id)
+                .eq('category', 'birthday')
+                .eq('recurrence', 'yearly')
+                .limit(1)
+              if (!existingSched || existingSched.length === 0) {
+                const displayName = me?.nickname?.trim() || '내'
+                await supabase.from('schedules').insert({
+                  household_id: memberData.household_id,
+                  user_id: user.id,
+                  title: `${displayName} 생일`,
+                  date: metaBirthday,
+                  category: 'birthday',
+                  recurrence: 'yearly',
+                })
+              }
+            }
           }
         }
         // 가계부가 없으면 선택 화면(생성 / 초대코드로 참여)이 표시됨
+
+        // 관리자 여부 확인
+        try {
+          const res = await fetch('/api/admin/check')
+          if (res.ok) {
+            const data = await res.json()
+            setIsAdmin(!!data.isAdmin)
+          }
+        } catch {
+          // 무시
+        }
       } catch (error) {
         console.error('데이터 조회 실패:', error)
       } finally {
@@ -209,6 +256,60 @@ export default function SettingsPage() {
     }
 
     alert('닉네임이 저장되었습니다')
+    window.location.reload()
+  }
+
+  const handleSaveBirthday = async () => {
+    if (!myId || !household) return
+    setSavingBirthday(true)
+
+    const { error: profileErr } = await supabase
+      .from('profiles')
+      .update({ birthday: birthday || null })
+      .eq('id', myId)
+    if (profileErr) {
+      setSavingBirthday(false)
+      alert('생일 저장 실패: ' + profileErr.message)
+      return
+    }
+
+    // 기존 생일 일정(내가 생성, category=birthday, recurrence=yearly) 찾기
+    const { data: existing } = await supabase
+      .from('schedules')
+      .select('id')
+      .eq('household_id', household.id)
+      .eq('user_id', myId)
+      .eq('category', 'birthday')
+      .eq('recurrence', 'yearly')
+      .limit(1)
+
+    const existingId = existing?.[0]?.id ?? null
+    const displayName = nickname.trim() || '내'
+    const title = `${displayName} 생일`
+
+    if (!birthday) {
+      // 생일 비웠으면 기존 일정 삭제
+      if (existingId) {
+        await supabase.from('schedules').delete().eq('id', existingId)
+      }
+    } else if (existingId) {
+      await supabase
+        .from('schedules')
+        .update({ title, date: birthday })
+        .eq('id', existingId)
+    } else {
+      await supabase.from('schedules').insert({
+        household_id: household.id,
+        user_id: myId,
+        title,
+        date: birthday,
+        category: 'birthday',
+        recurrence: 'yearly',
+      })
+    }
+
+    setSavingBirthday(false)
+    alert('생일이 저장되었습니다')
     window.location.reload()
   }
 
@@ -419,6 +520,31 @@ export default function SettingsPage() {
             </p>
           </div>
 
+          {/* 내 생년월일 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              내 생년월일
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="date"
+                value={birthday}
+                onChange={(e) => setBirthday(e.target.value)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              />
+              <button
+                onClick={handleSaveBirthday}
+                disabled={savingBirthday}
+                className="px-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-medium rounded-lg whitespace-nowrap"
+              >
+                {savingBirthday ? '저장 중' : '저장'}
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              매년 생일에 자동으로 일정/알림이 등록됩니다
+            </p>
+          </div>
+
           {/* 알림 */}
           {pushSupported && (
             <div>
@@ -519,10 +645,20 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {/* 관리자 링크 */}
+      {isAdmin && (
+        <button
+          onClick={() => router.push('/admin')}
+          className="mt-8 w-full font-medium py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+        >
+          🛠️ 관리자 페이지
+        </button>
+      )}
+
       {/* 로그아웃 */}
       <button
         onClick={handleLogout}
-        className="mt-8 w-full text-red-600 hover:text-red-700 font-medium py-2"
+        className={`${isAdmin ? 'mt-3' : 'mt-8'} w-full text-red-600 hover:text-red-700 font-medium py-2`}
       >
         로그아웃
       </button>
