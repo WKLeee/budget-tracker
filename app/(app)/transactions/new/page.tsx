@@ -43,6 +43,7 @@ export default function NewTransactionPage() {
   const [householdId, setHouseholdId] = useState('')
   const [schedTitle, setSchedTitle] = useState('')
   const [schedMemo, setSchedMemo] = useState('')
+  const [schedTime, setSchedTime] = useState('')
   const [schedCategory, setSchedCategory] = useState('general')
   const [schedRecurrence, setSchedRecurrence] = useState<
     'none' | 'weekly' | 'monthly' | 'yearly'
@@ -119,6 +120,7 @@ export default function NewTransactionPage() {
           user_id: user.id,
           title: schedTitle.trim(),
           date,
+          time: schedTime || null,
           memo: schedMemo.trim() || null,
           category: schedCategory,
           recurrence: schedRecurrence,
@@ -414,15 +416,28 @@ export default function NewTransactionPage() {
               )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">날짜</label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                required
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">날짜</label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  시간 <span className="text-gray-400 text-xs">(선택)</span>
+                </label>
+                <input
+                  type="time"
+                  value={schedTime}
+                  onChange={(e) => setSchedTime(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+              </div>
             </div>
 
             <div>
@@ -461,6 +476,81 @@ export default function NewTransactionPage() {
                 ))}
               </div>
             </div>
+
+            {/* 고정 거래 목록 (매월 반복 선택했을 때) */}
+            {txRecurrence === 'monthly' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  내 고정 거래 ({recurringRules.length})
+                </label>
+                {recurringRules.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-2">아직 등록된 고정 거래가 없어요</p>
+                ) : (
+                  <div className="space-y-2">
+                    {recurringRules.map(r => (
+                      <div
+                        key={r.id}
+                        className={`flex items-center justify-between p-3 rounded-lg border ${
+                          r.enabled ? 'border-gray-200 bg-white' : 'border-gray-100 bg-gray-50 opacity-60'
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 text-sm">
+                            {r.categories?.icon} {r.categories?.name}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            매월 {r.day_of_month}일 · {r.type === 'income' ? '+' : '-'}
+                            {r.amount.toLocaleString()}원
+                            {r.memo ? ` · ${r.memo}` : ''}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const { error } = await supabase
+                                .from('recurring_transactions')
+                                .update({ enabled: !r.enabled })
+                                .eq('id', r.id)
+                              if (error) {
+                                alert('변경 실패: ' + error.message)
+                                return
+                              }
+                              setRecurringRefetch(t => t + 1)
+                            }}
+                            className={`text-xs px-2 py-1 rounded ${
+                              r.enabled
+                                ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                                : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                            }`}
+                          >
+                            {r.enabled ? '켜짐' : '꺼짐'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!window.confirm('이 고정 거래를 삭제할까요?')) return
+                              const { error } = await supabase
+                                .from('recurring_transactions')
+                                .delete()
+                                .eq('id', r.id)
+                              if (error) {
+                                alert('삭제 실패: ' + error.message)
+                                return
+                              }
+                              setRecurringRefetch(t => t + 1)
+                            }}
+                            className="text-gray-400 hover:text-red-500 text-lg leading-none px-1"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {txRecurrence === 'none' ? (
               <div>
@@ -515,81 +605,6 @@ export default function NewTransactionPage() {
           {isSaving ? '저장 중...' : '저장'}
         </button>
       </form>
-
-      {/* 고정 거래 목록 (거래 모드 + 매월 반복일 때만) */}
-      {mode === 'transaction' && txRecurrence === 'monthly' && (
-        <div className="mt-8">
-          <h2 className="text-base font-bold text-gray-900 mb-3">
-            내 고정 거래 ({recurringRules.length})
-          </h2>
-          {recurringRules.length === 0 ? (
-            <p className="text-sm text-gray-500 py-4">아직 등록된 고정 거래가 없어요</p>
-          ) : (
-            <div className="space-y-2">
-              {recurringRules.map(r => (
-                <div
-                  key={r.id}
-                  className={`flex items-center justify-between p-3 rounded-lg border ${
-                    r.enabled ? 'border-gray-200 bg-white' : 'border-gray-100 bg-gray-50 opacity-60'
-                  }`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900 text-sm">
-                      {r.categories?.icon} {r.categories?.name}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      매월 {r.day_of_month}일 · {r.type === 'income' ? '+' : '-'}
-                      {r.amount.toLocaleString()}원
-                      {r.memo ? ` · ${r.memo}` : ''}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 ml-2 flex-shrink-0">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const { error } = await supabase
-                          .from('recurring_transactions')
-                          .update({ enabled: !r.enabled })
-                          .eq('id', r.id)
-                        if (error) {
-                          alert('변경 실패: ' + error.message)
-                          return
-                        }
-                        setRecurringRefetch(t => t + 1)
-                      }}
-                      className={`text-xs px-2 py-1 rounded ${
-                        r.enabled
-                          ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
-                          : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-                      }`}
-                    >
-                      {r.enabled ? '켜짐' : '꺼짐'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!window.confirm('이 고정 거래를 삭제할까요?')) return
-                        const { error } = await supabase
-                          .from('recurring_transactions')
-                          .delete()
-                          .eq('id', r.id)
-                        if (error) {
-                          alert('삭제 실패: ' + error.message)
-                          return
-                        }
-                        setRecurringRefetch(t => t + 1)
-                      }}
-                      className="text-gray-400 hover:text-red-500 text-lg leading-none px-1"
-                    >
-                      ×
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   )
 }

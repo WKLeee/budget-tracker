@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { sortByDefaultOrder } from '@/lib/categories'
 import EditTransactionModal from '@/components/EditTransactionModal'
+import EditRecurringRuleModal from '@/components/EditRecurringRuleModal'
 
 interface Transaction {
   id: string
@@ -15,6 +16,7 @@ interface Transaction {
   category_id: string | null
   categories: { name: string; icon: string } | null
   profiles: { email: string; nickname: string | null } | null
+  isRecurring?: boolean
 }
 
 interface Category {
@@ -24,9 +26,23 @@ interface Category {
   type: 'income' | 'expense'
 }
 
+interface RecurringRule {
+  id: string
+  user_id: string
+  type: 'income' | 'expense'
+  amount: number
+  memo: string | null
+  day_of_month: number
+  enabled: boolean
+  category_id: string | null
+  last_executed_date: string | null
+  categories: { name: string; icon: string } | null
+}
+
 export default function TransactionsPage() {
   const supabase = createClient()
   const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [recurringRules, setRecurringRules] = useState<RecurringRule[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date()
@@ -35,6 +51,7 @@ export default function TransactionsPage() {
   const [isLoading, setIsLoading] = useState(true)
 
   const [editing, setEditing] = useState<Transaction | null>(null)
+  const [editingRule, setEditingRule] = useState<RecurringRule | null>(null)
 
   const fetchTransactions = useCallback(async () => {
     try {
@@ -88,6 +105,17 @@ export default function TransactionsPage() {
           }
         })
       )
+
+      const { data: ruleData } = await supabase
+        .from('recurring_transactions')
+        .select(`
+          id, user_id, type, amount, memo, day_of_month, enabled,
+          category_id, last_executed_date,
+          categories (name, icon)
+        `)
+        .eq('household_id', members.household_id)
+        .eq('enabled', true)
+      setRecurringRules((ruleData as unknown as RecurringRule[]) || [])
     } catch (error) {
       console.error('거래 조회 실패:', error)
     } finally {
@@ -133,17 +161,42 @@ export default function TransactionsPage() {
     return `${year}-${month}`
   })
 
-  const income = transactions
-    .filter(t => t.type === 'income')
-    .reduce((sum, t) => sum + (t.amount || 0), 0)
-
-  const expense = transactions
-    .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + (t.amount || 0), 0)
-
   if (isLoading) {
     return <div className="p-4">로딩 중...</div>
   }
+
+  // selectedMonth 의 매월 반복 가상 거래 합성 (이미 실행된 건 제외)
+  const [selYear, selMonth] = selectedMonth.split('-').map(Number)
+  const selDaysInMonth = new Date(selYear, selMonth, 0).getDate()
+  const virtualRecurringTxns: Transaction[] = recurringRules
+    .filter(r => !r.last_executed_date || !r.last_executed_date.startsWith(selectedMonth))
+    .map(r => {
+      const day = Math.min(r.day_of_month, selDaysInMonth)
+      return {
+        id: `recurring-${r.id}`,
+        user_id: r.user_id,
+        type: r.type,
+        amount: r.amount,
+        memo: r.memo ?? '',
+        date: `${selectedMonth}-${String(day).padStart(2, '0')}`,
+        category_id: r.category_id,
+        categories: r.categories,
+        profiles: null,
+        isRecurring: true,
+      }
+    })
+
+  const allTransactions = [...transactions, ...virtualRecurringTxns].sort(
+    (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)
+  )
+
+  const income = allTransactions
+    .filter(t => t.type === 'income')
+    .reduce((sum, t) => sum + (t.amount || 0), 0)
+
+  const expense = allTransactions
+    .filter(t => t.type === 'expense')
+    .reduce((sum, t) => sum + (t.amount || 0), 0)
 
   const balance = income - expense
 
@@ -189,23 +242,38 @@ export default function TransactionsPage() {
       </div>
 
       {/* 거래 목록 */}
-      {transactions.length === 0 ? (
+      {allTransactions.length === 0 ? (
         <p className="text-gray-500 text-center py-8">거래가 없습니다</p>
       ) : (
         <div className="space-y-3">
-          {transactions.map(trans => (
+          {allTransactions.map(trans => (
             <button
               key={trans.id}
               type="button"
-              onClick={() => setEditing(trans)}
-              className="w-full flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200 text-left hover:bg-gray-100 transition"
+              onClick={() => {
+                if (trans.isRecurring) {
+                  const ruleId = trans.id.replace(/^recurring-/, '')
+                  const rule = recurringRules.find(r => r.id === ruleId)
+                  if (rule) setEditingRule(rule)
+                  return
+                }
+                setEditing(trans)
+              }}
+              className={`w-full flex items-center justify-between p-4 rounded-lg border text-left transition ${
+                trans.isRecurring
+                  ? 'bg-white border-gray-100 opacity-70 hover:bg-gray-50'
+                  : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+              }`}
             >
               <div className="flex-1">
                 <p className="font-medium text-gray-900">
+                  {trans.isRecurring && <span title="매월 반복">🔁 </span>}
                   {trans.categories?.icon} {trans.categories?.name}
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  {trans.profiles?.nickname || trans.profiles?.email.split('@')[0]} · {trans.date}
+                  {trans.isRecurring
+                    ? `예정 · ${trans.date}`
+                    : `${trans.profiles?.nickname || trans.profiles?.email.split('@')[0]} · ${trans.date}`}
                 </p>
                 {trans.memo && (
                   <p className="text-xs text-gray-600 mt-1">{trans.memo}</p>
@@ -232,6 +300,19 @@ export default function TransactionsPage() {
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null)
+            fetchTransactions()
+          }}
+        />
+      )}
+
+      {editingRule && (
+        <EditRecurringRuleModal
+          rule={editingRule}
+          categories={categories}
+          supabase={supabase}
+          onClose={() => setEditingRule(null)}
+          onSaved={() => {
+            setEditingRule(null)
             fetchTransactions()
           }}
         />

@@ -319,15 +319,67 @@ export default function StatsPage() {
       <div className="bg-white p-4 rounded-lg border border-gray-200 mb-6">
         <h2 className="font-bold text-gray-900 mb-4">월별 수입/지출</h2>
         {chartData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip formatter={(value: any) => `${Number(value).toLocaleString()}원`} />
-              <Legend />
-              <Bar dataKey="수입" fill="#10b981" />
-              <Bar dataKey="지출" fill="#ef4444" />
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart
+              data={chartData}
+              margin={{ top: 16, right: 8, left: -16, bottom: 0 }}
+              barCategoryGap="25%"
+            >
+              <defs>
+                <linearGradient id="incomeGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10b981" stopOpacity={0.95} />
+                  <stop offset="100%" stopColor="#10b981" stopOpacity={0.65} />
+                </linearGradient>
+                <linearGradient id="expenseGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#ef4444" stopOpacity={0.95} />
+                  <stop offset="100%" stopColor="#ef4444" stopOpacity={0.65} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke="#f3f4f6" vertical={false} />
+              <XAxis
+                dataKey="name"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: '#6b7280', fontSize: 12 }}
+              />
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                tickFormatter={(v: number) =>
+                  v >= 100000000
+                    ? `${(v / 100000000).toFixed(1).replace(/\.0$/, '')}억`
+                    : v >= 10000
+                    ? `${(v / 10000).toFixed(0)}만`
+                    : `${v}`
+                }
+              />
+              <Tooltip
+                cursor={{ fill: 'rgba(99,102,241,0.05)' }}
+                contentStyle={{
+                  borderRadius: 8,
+                  border: '1px solid #e5e7eb',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                  fontSize: 13,
+                }}
+                formatter={(value) => `${Number(value).toLocaleString()}원`}
+              />
+              <Legend
+                iconType="circle"
+                wrapperStyle={{ paddingTop: 8, fontSize: 13 }}
+              />
+              <Bar
+                dataKey="수입"
+                fill="url(#incomeGrad)"
+                radius={[6, 6, 0, 0]}
+                maxBarSize={32}
+              />
+              <Bar
+                dataKey="지출"
+                fill="url(#expenseGrad)"
+                radius={[6, 6, 0, 0]}
+                maxBarSize={32}
+              />
             </BarChart>
           </ResponsiveContainer>
         ) : (

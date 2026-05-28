@@ -9,6 +9,7 @@ export interface EditableSchedule {
   title: string
   memo: string | null
   date: string
+  time: string | null
   category: string | null
   recurrence: string | null
 }
@@ -30,6 +31,7 @@ export default function EditScheduleModal({
 }: Props) {
   const [title, setTitle] = useState(schedule.title)
   const [date, setDate] = useState(schedule.date)
+  const [time, setTime] = useState(schedule.time ?? '')
   const [memo, setMemo] = useState(schedule.memo ?? '')
   const [category, setCategory] = useState(schedule.category ?? 'general')
   const [recurrence, setRecurrence] = useState<Recurrence>(
@@ -40,6 +42,7 @@ export default function EditScheduleModal({
   useEffect(() => {
     setTitle(schedule.title)
     setDate(schedule.date)
+    setTime(schedule.time ?? '')
     setMemo(schedule.memo ?? '')
     setCategory(schedule.category ?? 'general')
     setRecurrence((schedule.recurrence as Recurrence) ?? 'none')
@@ -56,6 +59,7 @@ export default function EditScheduleModal({
       .update({
         title: title.trim(),
         date,
+        time: time || null,
         memo: memo.trim() || null,
         category,
         recurrence,
@@ -156,14 +160,27 @@ export default function EditScheduleModal({
           </div>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">날짜</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-          />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">날짜</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              시간 <span className="text-gray-400 text-xs">(선택)</span>
+            </label>
+            <input
+              type="time"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
         </div>
 
         <div>
