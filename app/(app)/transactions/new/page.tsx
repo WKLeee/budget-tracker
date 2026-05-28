@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { sortByDefaultOrder } from '@/lib/categories'
-import { SCHEDULE_CATEGORIES } from '@/lib/scheduleCategories'
+import { SCHEDULE_CATEGORIES, getScheduleCategory } from '@/lib/scheduleCategories'
 
 interface Category {
   id: string
@@ -100,6 +100,21 @@ export default function NewTransactionPage() {
           alert('일정 저장 실패: ' + error.message)
           return
         }
+
+        // 다른 멤버에게 일정 추가 푸시 알림 (실패해도 저장에는 영향 없음)
+        fetch('/api/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            kind: 'schedule',
+            householdId,
+            scheduleTitle: schedTitle.trim(),
+            scheduleIcon: getScheduleCategory(schedCategory).icon,
+            recurrence: schedRecurrence,
+            date,
+          }),
+        }).catch(() => {})
+
         router.push('/dashboard')
       } catch (error) {
         console.error('일정 저장 실패:', error)

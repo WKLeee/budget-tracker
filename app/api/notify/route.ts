@@ -23,7 +23,8 @@ export async function POST(request: Request) {
     return Response.json({ error: 'unauthorized' }, { status: 401 })
   }
 
-  const { householdId, amount, type, category } = await request.json()
+  const body = await request.json()
+  const { householdId, kind } = body
   if (!householdId) {
     return Response.json({ error: 'householdId required' }, { status: 400 })
   }
@@ -47,13 +48,32 @@ export async function POST(request: Request) {
     .single()
   const name = me?.nickname || me?.email?.split('@')[0] || '멤버'
 
-  const typeLabel = type === 'income' ? '수입' : '지출'
-  const amountStr = typeof amount === 'number' ? amount.toLocaleString() : `${amount ?? ''}`
-  // iOS는 제목 줄을 항상 표시(비우면 앱 이름)하므로, 전체 문장을 제목 한 줄에 넣고 본문은 비움
-  // "{이름}님이 {금액}원 {카테고리} {지출/수입} 추가"
-  const title = [`${name}님이`, `${amountStr}원`, category, `${typeLabel} 추가`]
-    .filter(Boolean)
-    .join(' ')
+  let title: string
+  if (kind === 'schedule') {
+    // "{이름}님이 일정 추가 📌 {제목} (매월)"
+    const { scheduleTitle, scheduleIcon, recurrence, date } = body
+    const recLabel =
+      recurrence === 'weekly' ? '매주' : recurrence === 'monthly' ? '매월' : ''
+    const dateLabel = typeof date === 'string' ? date.slice(5).replace('-', '/') : ''
+    const suffix = recLabel || dateLabel
+    title = [
+      `${name}님이 일정 추가`,
+      `${scheduleIcon ?? '📌'} ${scheduleTitle ?? ''}`.trim(),
+      suffix ? `(${suffix})` : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+  } else {
+    const { amount, type, category } = body
+    const typeLabel = type === 'income' ? '수입' : '지출'
+    const amountStr =
+      typeof amount === 'number' ? amount.toLocaleString() : `${amount ?? ''}`
+    // iOS는 제목 줄을 항상 표시(비우면 앱 이름)하므로, 전체 문장을 제목 한 줄에 넣고 본문은 비움
+    // "{이름}님이 {금액}원 {카테고리} {지출/수입} 추가"
+    title = [`${name}님이`, `${amountStr}원`, category, `${typeLabel} 추가`]
+      .filter(Boolean)
+      .join(' ')
+  }
 
   const payload = JSON.stringify({
     title,
