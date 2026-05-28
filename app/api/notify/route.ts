@@ -49,14 +49,15 @@ export async function POST(request: Request) {
 
   const typeLabel = type === 'income' ? '수입' : '지출'
   const amountStr = typeof amount === 'number' ? amount.toLocaleString() : `${amount ?? ''}`
-  // 한 줄로: "{이름}님이 {금액}원 {카테고리} {지출/수입} 추가"
-  const body = [`${name}님이`, `${amountStr}원`, category, `${typeLabel} 추가`]
+  // iOS는 제목 줄을 항상 표시(비우면 앱 이름)하므로, 전체 문장을 제목 한 줄에 넣고 본문은 비움
+  // "{이름}님이 {금액}원 {카테고리} {지출/수입} 추가"
+  const title = [`${name}님이`, `${amountStr}원`, category, `${typeLabel} 추가`]
     .filter(Boolean)
     .join(' ')
 
   const payload = JSON.stringify({
-    title: '',
-    body,
+    title,
+    body: '',
     url: '/dashboard',
   })
 
