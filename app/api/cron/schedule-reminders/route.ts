@@ -21,8 +21,13 @@ export async function GET(request: Request) {
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !serviceKey || !publicKey || !privateKey) {
-    return Response.json({ error: 'not configured' }, { status: 500 })
+  const missing: string[] = []
+  if (!url) missing.push('NEXT_PUBLIC_SUPABASE_URL')
+  if (!serviceKey) missing.push('SUPABASE_SERVICE_ROLE_KEY')
+  if (!publicKey) missing.push('NEXT_PUBLIC_VAPID_PUBLIC_KEY')
+  if (!privateKey) missing.push('VAPID_PRIVATE_KEY')
+  if (missing.length) {
+    return Response.json({ error: 'not configured', missing }, { status: 500 })
   }
 
   // 크론은 로그인 세션이 없으므로 서비스롤로 RLS 우회 (서버 전용)
