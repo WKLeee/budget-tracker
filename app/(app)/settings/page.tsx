@@ -403,7 +403,7 @@ export default function SettingsPage() {
                 {pushBusy ? '처리 중...' : pushOn ? '🔔 알림 켜짐 (끄기)' : '🔕 알림 받기'}
               </button>
               <p className="text-xs text-gray-500 mt-1">
-                멤버가 거래를 추가하면 푸시 알림을 받습니다
+                멤버가 일정/거래를 추가하면 푸시 알림을 받습니다
               </p>
             </div>
           )}
@@ -412,24 +412,60 @@ export default function SettingsPage() {
           <div>
             <h3 className="font-bold text-gray-900 mb-3">멤버 ({members.length}명)</h3>
             <div className="space-y-2">
-              {members.map(member => (
-                <div
-                  key={member.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                >
-                  <p className="text-gray-900">
-                    {member.profiles?.nickname || member.profiles?.email || '(unknown)'}
-                    {member.user_id === myId && (
-                      <span className="text-xs text-gray-500 ml-1">(나)</span>
-                    )}
-                  </p>
-                  {member.role === 'owner' && (
-                    <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">
-                      가계부주
-                    </span>
-                  )}
-                </div>
-              ))}
+              {members.map(member => {
+                const iAmOwner = members.find(m => m.user_id === myId)?.role === 'owner'
+                const canRemove =
+                  iAmOwner && member.role !== 'owner' && member.user_id !== myId
+                return (
+                  <div
+                    key={member.id}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                  >
+                    <p className="text-gray-900">
+                      {member.profiles?.nickname || member.profiles?.email || '(unknown)'}
+                      {member.user_id === myId && (
+                        <span className="text-xs text-gray-500 ml-1">(나)</span>
+                      )}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      {member.role === 'owner' && (
+                        <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">
+                          가계부주
+                        </span>
+                      )}
+                      {canRemove && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const name =
+                              member.profiles?.nickname ||
+                              member.profiles?.email ||
+                              '이 멤버'
+                            if (
+                              !window.confirm(
+                                `${name}을(를) 가계부에서 제외할까요?\n기존 거래/일정은 그대로 남습니다.`
+                              )
+                            )
+                              return
+                            const { error } = await supabase
+                              .from('household_members')
+                              .delete()
+                              .eq('id', member.id)
+                            if (error) {
+                              alert('제외 실패: ' + error.message)
+                              return
+                            }
+                            setMembers(members.filter(m => m.id !== member.id))
+                          }}
+                          className="text-xs text-red-600 hover:text-red-700 border border-red-300 hover:bg-red-50 px-2 py-1 rounded"
+                        >
+                          제외
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
 
