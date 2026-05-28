@@ -7,7 +7,8 @@ self.addEventListener('push', (event) => {
     data = { title: '가계부', body: event.data ? event.data.text() : '' }
   }
 
-  const title = data.title || '가계부'
+  // 빈 제목('')은 그대로 사용 (iOS에서 'from 가계부' 한 줄만 위에 뜨도록)
+  const title = data.title ?? '가계부'
   const options = {
     body: data.body || '',
     data: { url: data.url || '/dashboard' },
