@@ -5,8 +5,12 @@ import { createClient } from '@/lib/supabase/client'
 import {
   getScheduleCategory,
   RECURRENCE_LABELS,
+  RECURRENCE_COLORS,
   scheduleMatchesDate,
 } from '@/lib/scheduleCategories'
+import { sortByDefaultOrder } from '@/lib/categories'
+import EditTransactionModal from '@/components/EditTransactionModal'
+import EditScheduleModal from '@/components/EditScheduleModal'
 
 interface Transaction {
   id: string
@@ -15,8 +19,16 @@ interface Transaction {
   amount: number
   memo: string
   date: string
+  category_id: string | null
   categories: { name: string; icon: string } | null
   profiles: { email: string; nickname: string | null } | null
+}
+
+interface Category {
+  id: string
+  name: string
+  icon: string
+  type: 'income' | 'expense'
 }
 
 interface Schedule {
@@ -30,25 +42,44 @@ interface Schedule {
 
 export default function DashboardPage() {
   const supabase = createClient()
-  const [thisMonth, setThisMonth] = useState({ income: 0, expense: 0 })
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
-  const [householdId, setHouseholdId] = useState('')
+  const [categories, setCategories] = useState<Category[]>([])
+  const [editing, setEditing] = useState<Transaction | null>(null)
+  const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [refetchTick, setRefetchTick] = useState(0)
   const [selectedDate, setSelectedDate] = useState(() => {
     const n = new Date()
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
   })
 
   const now = new Date()
-  const year = now.getFullYear()
-  const month = now.getMonth() // 0-indexed
+  const [viewYear, setViewYear] = useState(now.getFullYear())
+  const [viewMonth, setViewMonth] = useState(now.getMonth()) // 0-indexed
+  const year = viewYear
+  const month = viewMonth
   const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`
-  const todayStr = `${monthPrefix}-${String(now.getDate()).padStart(2, '0')}`
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+  const goTo = (y: number, m: number) => {
+    const d = new Date(y, m, 1)
+    setViewYear(d.getFullYear())
+    setViewMonth(d.getMonth())
+    setSelectedDate(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+    )
+  }
+  const goPrevMonth = () => goTo(viewYear, viewMonth - 1)
+  const goNextMonth = () => goTo(viewYear, viewMonth + 1)
+  const goPrevYear = () => goTo(viewYear - 1, viewMonth)
+  const goNextYear = () => goTo(viewYear + 1, viewMonth)
 
   const loadSchedules = useCallback(
     async (hid: string) => {
-      const monthEnd = `${monthPrefix}-31`
+      const [py, pm] = monthPrefix.split('-').map(Number)
+      const lastDay = new Date(py, pm, 0).getDate()
+      const monthEnd = `${monthPrefix}-${String(lastDay).padStart(2, '0')}`
       const [oneTimeRes, recurringRes] = await Promise.all([
         supabase
           .from('schedules')
@@ -89,7 +120,9 @@ export default function DashboardPage() {
 
         const members = memberRows?.[0]
         if (!members) return
-        setHouseholdId(members.household_id)
+
+        const lastDay = new Date(year, month + 1, 0).getDate()
+        const monthEnd = `${monthPrefix}-${String(lastDay).padStart(2, '0')}`
 
         const { data: transData } = await supabase
           .from('transactions')
@@ -100,22 +133,21 @@ export default function DashboardPage() {
             amount,
             memo,
             date,
+            category_id,
             categories (name, icon)
           `)
           .eq('household_id', members.household_id)
           .gte('date', `${monthPrefix}-01`)
-          .lte('date', `${monthPrefix}-31`)
+          .lte('date', monthEnd)
           .order('date', { ascending: false })
 
-        if (transData) {
-          const income = transData
-            .filter(t => t.type === 'income')
-            .reduce((sum, t) => sum + (t.amount || 0), 0)
-          const expense = transData
-            .filter(t => t.type === 'expense')
-            .reduce((sum, t) => sum + (t.amount || 0), 0)
-          setThisMonth({ income, expense })
+        const { data: catData } = await supabase
+          .from('categories')
+          .select('id, name, icon, type')
+          .eq('household_id', members.household_id)
+        if (catData) setCategories(sortByDefaultOrder(catData as Category[]))
 
+        if (transData) {
           const rows = transData as unknown as Transaction[]
           const { data: profilesData } = await supabase
             .from('profiles')
@@ -144,22 +176,11 @@ export default function DashboardPage() {
     }
 
     fetchData()
-  }, [supabase, monthPrefix, loadSchedules])
-
-  const handleDeleteSchedule = async (id: string) => {
-    const { error } = await supabase.from('schedules').delete().eq('id', id)
-    if (error) {
-      alert('일정 삭제 실패: ' + error.message)
-      return
-    }
-    loadSchedules(householdId)
-  }
+  }, [supabase, monthPrefix, loadSchedules, refetchTick])
 
   if (isLoading) {
     return <div className="p-4">로딩 중...</div>
   }
-
-  const balance = thisMonth.income - thisMonth.expense
 
   const dailyTotals: Record<string, { income: number; expense: number }> = {}
   for (const t of transactions) {
@@ -187,39 +208,61 @@ export default function DashboardPage() {
     n >= 10000 ? `${(n / 10000).toFixed(1).replace(/\.0$/, '')}만` : `${n}`
 
   const selectedTransactions = transactions.filter(t => t.date === selectedDate)
-  const selectedSchedules = schedules.filter(s => scheduleMatchesDate(s, selectedDate))
+  const recurrenceRank: Record<string, number> = { yearly: 0, monthly: 1, weekly: 2, none: 3 }
+  const selectedSchedules = schedules
+    .filter(s => scheduleMatchesDate(s, selectedDate))
+    .sort(
+      (a, b) =>
+        (recurrenceRank[a.recurrence ?? 'none'] ?? 3) -
+        (recurrenceRank[b.recurrence ?? 'none'] ?? 3)
+    )
   const weekdays = ['일', '월', '화', '수', '목', '금', '토']
 
   return (
     <div className="p-4 max-w-md mx-auto">
-      {/* 요약 카드 */}
-      <div className="space-y-3 mb-6">
-        <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-lg p-4">
-          <p className="text-sm opacity-80">이번 달 잔액</p>
-          <p className="text-3xl font-bold mt-2">{balance.toLocaleString()}원</p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-            <p className="text-xs text-gray-600">지출</p>
-            <p className="text-lg font-bold text-red-600 mt-1">
-              -{thisMonth.expense.toLocaleString()}원
-            </p>
-          </div>
-          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-            <p className="text-xs text-gray-600">수입</p>
-            <p className="text-lg font-bold text-green-600 mt-1">
-              +{thisMonth.income.toLocaleString()}원
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* 달력 */}
       <div className="mb-6">
-        <h2 className="text-lg font-bold text-gray-900 mb-3">
-          {year}년 {month + 1}월
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={goPrevYear}
+              className="w-9 h-9 rounded-lg text-gray-600 hover:bg-gray-100 flex items-center justify-center text-sm font-bold"
+              aria-label="이전 년"
+            >
+              «
+            </button>
+            <button
+              type="button"
+              onClick={goPrevMonth}
+              className="w-9 h-9 rounded-lg text-gray-600 hover:bg-gray-100 flex items-center justify-center text-lg"
+              aria-label="이전 달"
+            >
+              ‹
+            </button>
+          </div>
+          <h2 className="text-lg font-bold text-gray-900">
+            {year}년 {month + 1}월
+          </h2>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={goNextMonth}
+              className="w-9 h-9 rounded-lg text-gray-600 hover:bg-gray-100 flex items-center justify-center text-lg"
+              aria-label="다음 달"
+            >
+              ›
+            </button>
+            <button
+              type="button"
+              onClick={goNextYear}
+              className="w-9 h-9 rounded-lg text-gray-600 hover:bg-gray-100 flex items-center justify-center text-sm font-bold"
+              aria-label="다음 년"
+            >
+              »
+            </button>
+          </div>
+        </div>
 
         <div className="grid grid-cols-7 mb-1">
           {weekdays.map((w, i) => (
@@ -298,9 +341,11 @@ export default function DashboardPage() {
               const cat = getScheduleCategory(s.category)
               const rec = s.recurrence ?? 'none'
               return (
-                <div
+                <button
                   key={s.id}
-                  className="flex items-start justify-between py-2 border-b border-gray-100 gap-2"
+                  type="button"
+                  onClick={() => setEditingSchedule(s)}
+                  className="w-full flex items-start justify-between py-2 border-b border-gray-100 gap-2 text-left hover:bg-gray-50 transition"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -310,7 +355,10 @@ export default function DashboardPage() {
                       {rec !== 'none' && (
                         <span
                           className="text-[10px] px-1.5 py-0.5 rounded"
-                          style={{ backgroundColor: `${cat.color}20`, color: cat.color }}
+                          style={{
+                            backgroundColor: `${RECURRENCE_COLORS[rec]}20`,
+                            color: RECURRENCE_COLORS[rec],
+                          }}
                         >
                           {RECURRENCE_LABELS[rec]}
                         </span>
@@ -322,15 +370,8 @@ export default function DashboardPage() {
                       </p>
                     ) : null}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteSchedule(s.id)}
-                    className="text-gray-400 hover:text-red-500 text-lg leading-none px-2 flex-shrink-0"
-                    title={rec !== 'none' ? '반복 일정 전체 삭제' : '삭제'}
-                  >
-                    ×
-                  </button>
-                </div>
+                  <span className="text-gray-300 text-sm flex-shrink-0 pr-1">›</span>
+                </button>
               )
             })}
           </div>
@@ -347,9 +388,11 @@ export default function DashboardPage() {
         ) : (
           <div className="space-y-2">
             {selectedTransactions.map(trans => (
-              <div
+              <button
                 key={trans.id}
-                className="flex items-center justify-between py-3 border-b border-gray-100"
+                type="button"
+                onClick={() => setEditing(trans)}
+                className="w-full flex items-center justify-between py-3 border-b border-gray-100 text-left hover:bg-gray-50 transition"
               >
                 <div className="flex-1">
                   <p className="font-medium text-gray-900">
@@ -370,11 +413,36 @@ export default function DashboardPage() {
                   {trans.type === 'income' ? '+' : '-'}
                   {trans.amount.toLocaleString()}원
                 </p>
-              </div>
+              </button>
             ))}
           </div>
         )}
       </div>
+
+      {editing && (
+        <EditTransactionModal
+          transaction={editing}
+          categories={categories}
+          supabase={supabase}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null)
+            setRefetchTick(t => t + 1)
+          }}
+        />
+      )}
+
+      {editingSchedule && (
+        <EditScheduleModal
+          schedule={editingSchedule}
+          supabase={supabase}
+          onClose={() => setEditingSchedule(null)}
+          onSaved={() => {
+            setEditingSchedule(null)
+            setRefetchTick(t => t + 1)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -28,6 +28,12 @@ export const RECURRENCE_LABELS: Record<string, string> = {
   yearly: '매년',
 }
 
+export const RECURRENCE_COLORS: Record<string, string> = {
+  weekly: '#14b8a6',  // teal
+  monthly: '#3b82f6', // blue
+  yearly: '#a855f7',  // purple
+}
+
 export function scheduleMatchesDate(
   s: { date: string; recurrence?: string | null },
   dateStr: string
