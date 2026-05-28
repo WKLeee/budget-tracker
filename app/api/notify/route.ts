@@ -49,10 +49,11 @@ export async function POST(request: Request) {
 
   const typeLabel = type === 'income' ? '수입' : '지출'
   const amountStr = typeof amount === 'number' ? amount.toLocaleString() : `${amount ?? ''}`
-  const body = `${name}님이 ${typeLabel} ${amountStr}원 추가${category ? ` · ${category}` : ''}`
+  const title = `${name}님이 ${typeLabel} 추가`
+  const body = `${amountStr}원${category ? ` · ${category}` : ''}`
 
   const payload = JSON.stringify({
-    title: '가계부',
+    title,
     body,
     url: '/dashboard',
   })
