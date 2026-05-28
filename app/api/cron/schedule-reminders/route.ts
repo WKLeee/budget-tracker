@@ -33,16 +33,52 @@ export async function GET(request: Request) {
   // 크론은 로그인 세션이 없으므로 서비스롤로 RLS 우회 (서버 전용)
   const admin = createClient(url, serviceKey)
 
-  // KST 기준 오늘 (크론은 00:00 UTC = 09:00 KST 실행)
-  const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
+  // KST 기준 오늘 (크론은 23:00 UTC = 08:00 KST 실행)
+  const kstNow = new Date(Date.now() + 9 * 3600 * 1000)
+  const today = kstNow.toISOString().slice(0, 10)
+  const todayDow = kstNow.getUTCDay() // 0=일 ~ 6=토
+  const todayDay = kstNow.getUTCDate() // 1~31
 
-  const { data: schedules } = await admin
-    .from('schedules')
-    .select('id, title, household_id')
-    .eq('date', today)
-    .eq('notified', false)
+  const [oneTimeRes, recurringRes] = await Promise.all([
+    admin
+      .from('schedules')
+      .select('id, title, household_id, recurrence')
+      .eq('date', today)
+      .eq('notified', false)
+      .or('recurrence.is.null,recurrence.eq.none'),
+    admin
+      .from('schedules')
+      .select('id, title, household_id, recurrence, date')
+      .in('recurrence', ['weekly', 'monthly'])
+      .lte('date', today),
+  ])
 
-  if (!schedules || schedules.length === 0) {
+  const oneTime = (oneTimeRes.data ?? []) as Array<{
+    id: string
+    title: string
+    household_id: string
+  }>
+  const recurring = (recurringRes.data ?? []) as Array<{
+    id: string
+    title: string
+    household_id: string
+    recurrence: string
+    date: string
+  }>
+
+  const matchedRecurring = recurring.filter(s => {
+    const start = new Date(s.date + 'T00:00:00Z')
+    if (s.recurrence === 'weekly') return start.getUTCDay() === todayDow
+    if (s.recurrence === 'monthly') return start.getUTCDate() === todayDay
+    return false
+  })
+
+  const schedules: Array<{ id: string; title: string; household_id: string }> = [
+    ...oneTime,
+    ...matchedRecurring,
+  ]
+
+  if (schedules.length === 0) {
     return Response.json({ sent: 0, schedules: 0 })
   }
 
@@ -77,13 +113,16 @@ export async function GET(request: Request) {
     })
   )
 
-  await admin
-    .from('schedules')
-    .update({ notified: true })
-    .in(
-      'id',
-      schedules.map((s) => s.id)
-    )
+  // 반복 일정은 다음 주기에도 다시 보내야 하므로 notified=true 표시하지 않음
+  if (oneTime.length > 0) {
+    await admin
+      .from('schedules')
+      .update({ notified: true })
+      .in(
+        'id',
+        oneTime.map((s) => s.id)
+      )
+  }
 
   return Response.json({ sent, schedules: schedules.length })
 }

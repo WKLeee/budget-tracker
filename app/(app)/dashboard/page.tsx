@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import {
+  getScheduleCategory,
+  RECURRENCE_LABELS,
+  scheduleMatchesDate,
+} from '@/lib/scheduleCategories'
 
 interface Transaction {
   id: string
@@ -19,6 +24,8 @@ interface Schedule {
   title: string
   memo: string | null
   date: string
+  category: string | null
+  recurrence: string | null
 }
 
 export default function DashboardPage() {
@@ -27,14 +34,11 @@ export default function DashboardPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [householdId, setHouseholdId] = useState('')
-  const [myId, setMyId] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState(() => {
     const n = new Date()
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
   })
-  const [schedTitle, setSchedTitle] = useState('')
-  const [savingSched, setSavingSched] = useState(false)
 
   const now = new Date()
   const year = now.getFullYear()
@@ -44,14 +48,29 @@ export default function DashboardPage() {
 
   const loadSchedules = useCallback(
     async (hid: string) => {
-      const { data } = await supabase
-        .from('schedules')
-        .select('id, title, memo, date')
-        .eq('household_id', hid)
-        .gte('date', `${monthPrefix}-01`)
-        .lte('date', `${monthPrefix}-31`)
-        .order('date')
-      setSchedules((data as Schedule[]) || [])
+      const monthEnd = `${monthPrefix}-31`
+      const [oneTimeRes, recurringRes] = await Promise.all([
+        supabase
+          .from('schedules')
+          .select('id, title, memo, date, category, recurrence')
+          .eq('household_id', hid)
+          .or('recurrence.is.null,recurrence.eq.none')
+          .gte('date', `${monthPrefix}-01`)
+          .lte('date', monthEnd)
+          .order('date'),
+        supabase
+          .from('schedules')
+          .select('id, title, memo, date, category, recurrence')
+          .eq('household_id', hid)
+          .in('recurrence', ['weekly', 'monthly'])
+          .lte('date', monthEnd)
+          .order('date'),
+      ])
+      const merged = [
+        ...((oneTimeRes.data as Schedule[]) || []),
+        ...((recurringRes.data as Schedule[]) || []),
+      ]
+      setSchedules(merged)
     },
     [supabase, monthPrefix]
   )
@@ -61,7 +80,6 @@ export default function DashboardPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
-        setMyId(user.id)
 
         const { data: memberRows } = await supabase
           .from('household_members')
@@ -128,24 +146,6 @@ export default function DashboardPage() {
     fetchData()
   }, [supabase, monthPrefix, loadSchedules])
 
-  const handleAddSchedule = async () => {
-    if (!schedTitle.trim() || !householdId || !myId) return
-    setSavingSched(true)
-    const { error } = await supabase.from('schedules').insert({
-      household_id: householdId,
-      user_id: myId,
-      title: schedTitle.trim(),
-      date: selectedDate,
-    })
-    setSavingSched(false)
-    if (error) {
-      alert('일정 추가 실패: ' + error.message)
-      return
-    }
-    setSchedTitle('')
-    loadSchedules(householdId)
-  }
-
   const handleDeleteSchedule = async (id: string) => {
     const { error } = await supabase.from('schedules').delete().eq('id', id)
     if (error) {
@@ -169,8 +169,6 @@ export default function DashboardPage() {
     dailyTotals[t.date] = d
   }
 
-  const scheduleDates = new Set(schedules.map(s => s.date))
-
   const firstWeekday = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const cells: (number | null)[] = [
@@ -178,11 +176,18 @@ export default function DashboardPage() {
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ]
 
+  const scheduleColorByDate: Record<string, string> = {}
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${monthPrefix}-${String(d).padStart(2, '0')}`
+    const match = schedules.find(s => scheduleMatchesDate(s, dateStr))
+    if (match) scheduleColorByDate[dateStr] = getScheduleCategory(match.category).color
+  }
+
   const short = (n: number) =>
     n >= 10000 ? `${(n / 10000).toFixed(1).replace(/\.0$/, '')}만` : `${n}`
 
   const selectedTransactions = transactions.filter(t => t.date === selectedDate)
-  const selectedSchedules = schedules.filter(s => s.date === selectedDate)
+  const selectedSchedules = schedules.filter(s => scheduleMatchesDate(s, selectedDate))
   const weekdays = ['일', '월', '화', '수', '목', '금', '토']
 
   return (
@@ -249,8 +254,11 @@ export default function DashboardPage() {
                     : 'border-transparent hover:bg-gray-50'
                 }`}
               >
-                {scheduleDates.has(dateStr) && (
-                  <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                {scheduleColorByDate[dateStr] && (
+                  <span
+                    className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: scheduleColorByDate[dateStr] }}
+                  />
                 )}
                 <span
                   className={`text-xs ${
@@ -282,44 +290,51 @@ export default function DashboardPage() {
         <h2 className="text-base font-bold text-gray-900 mb-3">
           {Number(selectedDate.split('-')[1])}월 {Number(selectedDate.split('-')[2])}일 일정
         </h2>
-        <div className="space-y-2">
-          {selectedSchedules.map(s => (
-            <div
-              key={s.id}
-              className="flex items-center justify-between py-2 border-b border-gray-100"
-            >
-              <span className="text-sm text-gray-900">
-                📌 {s.title}
-                {s.memo ? <span className="text-gray-500"> · {s.memo}</span> : null}
-              </span>
-              <button
-                type="button"
-                onClick={() => handleDeleteSchedule(s.id)}
-                className="text-gray-400 hover:text-red-500 text-lg leading-none px-2"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-        <div className="flex gap-2 mt-3">
-          <input
-            type="text"
-            value={schedTitle}
-            onChange={(e) => setSchedTitle(e.target.value)}
-            placeholder="일정 추가 (예: 월세 내는 날)"
-            maxLength={50}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
-          />
-          <button
-            type="button"
-            onClick={handleAddSchedule}
-            disabled={savingSched}
-            className="px-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg whitespace-nowrap"
-          >
-            추가
-          </button>
-        </div>
+        {selectedSchedules.length === 0 ? (
+          <p className="text-gray-500 text-sm py-2">이 날의 일정이 없습니다</p>
+        ) : (
+          <div className="space-y-2">
+            {selectedSchedules.map(s => {
+              const cat = getScheduleCategory(s.category)
+              const rec = s.recurrence ?? 'none'
+              return (
+                <div
+                  key={s.id}
+                  className="flex items-start justify-between py-2 border-b border-gray-100 gap-2"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-sm text-gray-900">
+                        {cat.icon} {s.title}
+                      </span>
+                      {rec !== 'none' && (
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded"
+                          style={{ backgroundColor: `${cat.color}20`, color: cat.color }}
+                        >
+                          {RECURRENCE_LABELS[rec]}
+                        </span>
+                      )}
+                    </div>
+                    {s.memo ? (
+                      <p className="text-xs text-gray-500 mt-1 whitespace-pre-wrap break-words">
+                        {s.memo}
+                      </p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteSchedule(s.id)}
+                    className="text-gray-400 hover:text-red-500 text-lg leading-none px-2 flex-shrink-0"
+                    title={rec !== 'none' ? '반복 일정 전체 삭제' : '삭제'}
+                  >
+                    ×
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* 선택한 날짜의 거래 */}
