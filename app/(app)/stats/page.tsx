@@ -203,9 +203,8 @@ export default function StatsPage() {
                   data={categoryData}
                   cx="50%"
                   cy="50%"
-                  labelLine={false}
-                  label={({ name, value }) => `${name}: ${(value as number).toLocaleString()}원`}
-                  outerRadius={80}
+                  innerRadius={50}
+                  outerRadius={90}
                   fill="#8884d8"
                   dataKey="value"
                 >
