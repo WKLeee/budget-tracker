@@ -13,10 +13,25 @@ interface Category {
   type: 'income' | 'expense'
 }
 
+interface RecurringRule {
+  id: string
+  type: 'income' | 'expense'
+  amount: number
+  memo: string | null
+  day_of_month: number
+  enabled: boolean
+  category_id: string | null
+  categories: { name: string; icon: string } | null
+}
+
 export default function NewTransactionPage() {
   const router = useRouter()
   const supabase = createClient()
   const [mode, setMode] = useState<'transaction' | 'schedule'>('transaction')
+  const [txRecurrence, setTxRecurrence] = useState<'none' | 'monthly'>('none')
+  const [recurDayOfMonth, setRecurDayOfMonth] = useState(1)
+  const [recurringRules, setRecurringRules] = useState<RecurringRule[]>([])
+  const [recurringRefetch, setRecurringRefetch] = useState(0)
   const [transactionType, setTransactionType] = useState<'income' | 'expense'>('expense')
   const [amount, setAmount] = useState('')
   const [memo, setMemo] = useState('')
@@ -67,6 +82,16 @@ export default function NewTransactionPage() {
           const defaultCat = sorted.find(c => c.type === 'expense')
           if (defaultCat) setSelectedCategory(defaultCat.id)
         }
+
+        const { data: ruleData } = await supabase
+          .from('recurring_transactions')
+          .select(`
+            id, type, amount, memo, day_of_month, enabled, category_id,
+            categories (name, icon)
+          `)
+          .eq('household_id', members.household_id)
+          .order('day_of_month')
+        if (ruleData) setRecurringRules(ruleData as unknown as RecurringRule[])
       } catch (error) {
         console.error('데이터 조회 실패:', error)
       } finally {
@@ -75,7 +100,7 @@ export default function NewTransactionPage() {
     }
 
     fetchData()
-  }, [supabase, router])
+  }, [supabase, router, recurringRefetch])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -137,6 +162,28 @@ export default function NewTransactionPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
+
+      // 매월 반복 → recurring_transactions 테이블에 저장 (목록만 갱신, redirect X)
+      if (txRecurrence === 'monthly') {
+        const { error } = await supabase.from('recurring_transactions').insert({
+          household_id: householdId,
+          user_id: user.id,
+          type: transactionType,
+          amount: Math.round(Number(amount)),
+          category_id: selectedCategory,
+          memo: memo || null,
+          day_of_month: recurDayOfMonth,
+          enabled: true,
+        })
+        if (error) {
+          alert('고정 거래 저장 실패: ' + error.message)
+          return
+        }
+        setAmount('')
+        setMemo('')
+        setRecurringRefetch(t => t + 1)
+        return
+      }
 
       const { error } = await supabase.from('transactions').insert({
         household_id: householdId,
@@ -368,6 +415,17 @@ export default function NewTransactionPage() {
             </div>
 
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">날짜</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                required
+              />
+            </div>
+
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">메모</label>
               <textarea
                 value={schedMemo}
@@ -381,29 +439,71 @@ export default function NewTransactionPage() {
           </>
         )}
 
-        {/* 날짜 */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">날짜</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            required
-          />
-        </div>
-
+        {/* 거래: 반복 선택 + 날짜 또는 매월 N일 */}
         {mode === 'transaction' && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">메모</label>
-            <input
-              type="text"
-              value={memo}
-              onChange={(e) => setMemo(e.target.value)}
-              placeholder="선택사항"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            />
-          </div>
+          <>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">반복</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(['none', 'monthly'] as const).map(r => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setTxRecurrence(r)}
+                    className={`py-2 rounded-lg text-sm font-medium border transition ${
+                      txRecurrence === r
+                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                        : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {r === 'none' ? '한 번' : '매월 반복'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {txRecurrence === 'none' ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">날짜</label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  required
+                />
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">매월 며칠</label>
+                <select
+                  value={recurDayOfMonth}
+                  onChange={(e) => setRecurDayOfMonth(Number(e.target.value))}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                >
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                    <option key={d} value={d}>
+                      매월 {d}일
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-2">
+                  해당 일자에 자동으로 거래가 추가돼요. 그달에 그 날짜가 없으면(예: 2월 31일) 그달 마지막 날에 처리.
+                </p>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">메모</label>
+              <input
+                type="text"
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                placeholder="선택사항"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+            </div>
+          </>
         )}
 
         {/* 저장 버튼 */}
@@ -415,6 +515,81 @@ export default function NewTransactionPage() {
           {isSaving ? '저장 중...' : '저장'}
         </button>
       </form>
+
+      {/* 고정 거래 목록 (거래 모드 + 매월 반복일 때만) */}
+      {mode === 'transaction' && txRecurrence === 'monthly' && (
+        <div className="mt-8">
+          <h2 className="text-base font-bold text-gray-900 mb-3">
+            내 고정 거래 ({recurringRules.length})
+          </h2>
+          {recurringRules.length === 0 ? (
+            <p className="text-sm text-gray-500 py-4">아직 등록된 고정 거래가 없어요</p>
+          ) : (
+            <div className="space-y-2">
+              {recurringRules.map(r => (
+                <div
+                  key={r.id}
+                  className={`flex items-center justify-between p-3 rounded-lg border ${
+                    r.enabled ? 'border-gray-200 bg-white' : 'border-gray-100 bg-gray-50 opacity-60'
+                  }`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900 text-sm">
+                      {r.categories?.icon} {r.categories?.name}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      매월 {r.day_of_month}일 · {r.type === 'income' ? '+' : '-'}
+                      {r.amount.toLocaleString()}원
+                      {r.memo ? ` · ${r.memo}` : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const { error } = await supabase
+                          .from('recurring_transactions')
+                          .update({ enabled: !r.enabled })
+                          .eq('id', r.id)
+                        if (error) {
+                          alert('변경 실패: ' + error.message)
+                          return
+                        }
+                        setRecurringRefetch(t => t + 1)
+                      }}
+                      className={`text-xs px-2 py-1 rounded ${
+                        r.enabled
+                          ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                          : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                      }`}
+                    >
+                      {r.enabled ? '켜짐' : '꺼짐'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!window.confirm('이 고정 거래를 삭제할까요?')) return
+                        const { error } = await supabase
+                          .from('recurring_transactions')
+                          .delete()
+                          .eq('id', r.id)
+                        if (error) {
+                          alert('삭제 실패: ' + error.message)
+                          return
+                        }
+                        setRecurringRefetch(t => t + 1)
+                      }}
+                      className="text-gray-400 hover:text-red-500 text-lg leading-none px-1"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
