@@ -21,12 +21,12 @@ export async function GET(request: Request) {
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  const missing: string[] = []
-  if (!url) missing.push('NEXT_PUBLIC_SUPABASE_URL')
-  if (!serviceKey) missing.push('SUPABASE_SERVICE_ROLE_KEY')
-  if (!publicKey) missing.push('NEXT_PUBLIC_VAPID_PUBLIC_KEY')
-  if (!privateKey) missing.push('VAPID_PRIVATE_KEY')
-  if (missing.length) {
+  if (!url || !serviceKey || !publicKey || !privateKey) {
+    const missing: string[] = []
+    if (!url) missing.push('NEXT_PUBLIC_SUPABASE_URL')
+    if (!serviceKey) missing.push('SUPABASE_SERVICE_ROLE_KEY')
+    if (!publicKey) missing.push('NEXT_PUBLIC_VAPID_PUBLIC_KEY')
+    if (!privateKey) missing.push('VAPID_PRIVATE_KEY')
     return Response.json({ error: 'not configured', missing }, { status: 500 })
   }
 
