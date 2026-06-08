@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ensureDefaultCategories } from '@/lib/categories'
+import AppLoading from '@/components/AppLoading'
 import {
   isPushSupported,
   isSubscribed,
@@ -157,7 +158,7 @@ export default function SettingsPage() {
   }, [supabase])
 
   useEffect(() => {
-    setPushSupported(isPushSupported())
+    queueMicrotask(() => setPushSupported(isPushSupported()))
     isSubscribed()
       .then(setPushOn)
       .catch(() => {})
@@ -377,7 +378,7 @@ export default function SettingsPage() {
   }
 
   if (isLoading) {
-    return <div className="p-4">로딩 중...</div>
+    return <AppLoading />
   }
 
   return (

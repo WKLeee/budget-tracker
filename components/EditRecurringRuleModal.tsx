@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ModalCategory } from './EditTransactionModal'
 
@@ -36,15 +36,6 @@ export default function EditRecurringRuleModal({
   const [memo, setMemo] = useState(rule.memo ?? '')
   const [enabled, setEnabled] = useState(rule.enabled)
   const [isSaving, setIsSaving] = useState(false)
-
-  useEffect(() => {
-    setType(rule.type)
-    setAmount(String(rule.amount))
-    setCategoryId(rule.category_id ?? '')
-    setDayOfMonth(rule.day_of_month)
-    setMemo(rule.memo ?? '')
-    setEnabled(rule.enabled)
-  }, [rule])
 
   const filteredCategories = categories.filter(c => c.type === type)
 

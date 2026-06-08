@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import AppLoading from '@/components/AppLoading'
 
 interface Stats {
   db_size_bytes: number
@@ -73,7 +74,7 @@ export default function AdminPage() {
   }, [router])
 
   if (loading) {
-    return <div className="p-4">로딩 중...</div>
+    return <AppLoading />
   }
   if (error) {
     return <div className="p-4 text-red-600">에러: {error}</div>

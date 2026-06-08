@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { SCHEDULE_CATEGORIES } from '@/lib/scheduleCategories'
 
@@ -38,15 +38,6 @@ export default function EditScheduleModal({
     (schedule.recurrence as Recurrence) ?? 'none'
   )
   const [isSaving, setIsSaving] = useState(false)
-
-  useEffect(() => {
-    setTitle(schedule.title)
-    setDate(schedule.date)
-    setTime(schedule.time ?? '')
-    setMemo(schedule.memo ?? '')
-    setCategory(schedule.category ?? 'general')
-    setRecurrence((schedule.recurrence as Recurrence) ?? 'none')
-  }, [schedule])
 
   const handleUpdate = async () => {
     if (!title.trim()) {

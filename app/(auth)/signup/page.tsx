@@ -47,7 +47,7 @@ export default function SignupPage() {
 
       // 회원가입 후 로그인 페이지로 이동
       router.push('/login?message=회원가입이 완료되었습니다. 로그인해주세요.')
-    } catch (err) {
+    } catch {
       setError('회원가입 중 오류가 발생했습니다')
     } finally {
       setLoading(false)

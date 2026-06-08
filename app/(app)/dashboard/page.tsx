@@ -12,6 +12,7 @@ import { sortByDefaultOrder } from '@/lib/categories'
 import EditTransactionModal from '@/components/EditTransactionModal'
 import EditScheduleModal from '@/components/EditScheduleModal'
 import EditRecurringRuleModal from '@/components/EditRecurringRuleModal'
+import AppLoading from '@/components/AppLoading'
 
 interface Transaction {
   id: string
@@ -92,6 +93,14 @@ export default function DashboardPage() {
   const goNextMonth = () => goTo(viewYear, viewMonth + 1)
   const goPrevYear = () => goTo(viewYear - 1, viewMonth)
   const goNextYear = () => goTo(viewYear + 1, viewMonth)
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('budget-tracker:dashboard-date', {
+        detail: selectedDate,
+      })
+    )
+  }, [selectedDate])
 
   const loadSchedules = useCallback(
     async (hid: string) => {
@@ -205,10 +214,10 @@ export default function DashboardPage() {
     }
 
     fetchData()
-  }, [supabase, monthPrefix, loadSchedules, refetchTick])
+  }, [supabase, monthPrefix, loadSchedules, refetchTick, month, year])
 
   if (isLoading) {
-    return <div className="p-4">로딩 중...</div>
+    return <AppLoading />
   }
 
   const firstWeekday = new Date(year, month, 1).getDay()

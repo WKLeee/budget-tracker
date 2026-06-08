@@ -10,6 +10,7 @@ export const SCHEDULE_CATEGORIES: ScheduleCategory[] = [
   { key: 'bill', label: '공과금/납부', icon: '💳', color: '#ef4444' },
   { key: 'anniversary', label: '기념일', icon: '🎉', color: '#ec4899' },
   { key: 'birthday', label: '생일', icon: '🎂', color: '#f472b6' },
+  { key: 'wedding', label: '결혼준비', icon: '💍', color: '#a855f7' },
   { key: 'gathering', label: '모임', icon: '🍻', color: '#14b8a6' },
   { key: 'travel', label: '여행', icon: '✈️', color: '#0ea5e9' },
   { key: 'event', label: '이벤트', icon: '🎯', color: '#f59e0b' },

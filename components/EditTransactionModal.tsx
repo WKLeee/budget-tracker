@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface EditableTransaction {
@@ -40,14 +40,6 @@ export default function EditTransactionModal({
   const [date, setDate] = useState(transaction.date)
   const [memo, setMemo] = useState(transaction.memo ?? '')
   const [isSaving, setIsSaving] = useState(false)
-
-  useEffect(() => {
-    setType(transaction.type)
-    setAmount(String(transaction.amount))
-    setCategoryId(transaction.category_id ?? '')
-    setDate(transaction.date)
-    setMemo(transaction.memo ?? '')
-  }, [transaction])
 
   const filteredCategories = categories.filter(c => c.type === type)
 

@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { ensureDefaultCategories } from '@/lib/categories'
 import Link from 'next/link'
+import AppLoading from '@/components/AppLoading'
 
 export default function AppLayout({
   children,
@@ -15,6 +16,7 @@ export default function AppLayout({
   const pathname = usePathname()
   const supabase = createClient()
   const [isLoading, setIsLoading] = useState(true)
+  const [dashboardDate, setDashboardDate] = useState<string | null>(null)
 
   useEffect(() => {
     const init = async () => {
@@ -43,11 +45,29 @@ export default function AppLayout({
     init()
   }, [router, supabase])
 
+  useEffect(() => {
+    const handleDateChange = (event: Event) => {
+      const selectedDate = (event as CustomEvent<string>).detail
+      if (/^\d{4}-\d{2}-\d{2}$/.test(selectedDate)) {
+        setDashboardDate(selectedDate)
+      }
+    }
+
+    window.addEventListener('budget-tracker:dashboard-date', handleDateChange)
+    return () => {
+      window.removeEventListener('budget-tracker:dashboard-date', handleDateChange)
+    }
+  }, [])
+
   if (isLoading) {
-    return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>
+    return <AppLoading />
   }
 
   const isActive = (path: string) => pathname === path
+  const addHref =
+    pathname === '/dashboard' && dashboardDate
+      ? `/transactions/new?date=${dashboardDate}`
+      : '/transactions/new'
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -60,7 +80,7 @@ export default function AppLayout({
         <div className="flex justify-around max-w-full">
           <NavLink href="/dashboard" label="달력" icon="📅" isActive={isActive('/dashboard')} />
           <NavLink href="/transactions" label="거래" icon="📋" isActive={isActive('/transactions')} />
-          <NavLink href="/transactions/new" label="추가" icon="➕" isActive={isActive('/transactions/new')} />
+          <NavLink href={addHref} label="추가" icon="➕" isActive={isActive('/transactions/new')} />
           <NavLink href="/stats" label="통계" icon="📊" isActive={isActive('/stats')} />
           <NavLink href="/settings" label="설정" icon="⚙️" isActive={isActive('/settings')} />
         </div>

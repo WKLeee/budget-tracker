@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { sortByDefaultOrder } from '@/lib/categories'
 import { SCHEDULE_CATEGORIES, getScheduleCategory } from '@/lib/scheduleCategories'
+import AppLoading from '@/components/AppLoading'
 
 interface Category {
   id: string
@@ -24,9 +25,24 @@ interface RecurringRule {
   categories: { name: string; icon: string } | null
 }
 
+function getTodayString() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+function normalizeDateParam(value: string | null) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const parsed = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) return null
+  const normalized = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`
+  return normalized === value ? value : null
+}
+
 export default function NewTransactionPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
+  const initialDate = normalizeDateParam(searchParams.get('date')) ?? getTodayString()
   const [mode, setMode] = useState<'transaction' | 'schedule'>('transaction')
   const [txRecurrence, setTxRecurrence] = useState<'none' | 'monthly'>('none')
   const [recurDayOfMonth, setRecurDayOfMonth] = useState(1)
@@ -35,7 +51,7 @@ export default function NewTransactionPage() {
   const [transactionType, setTransactionType] = useState<'income' | 'expense'>('expense')
   const [amount, setAmount] = useState('')
   const [memo, setMemo] = useState('')
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(initialDate)
   const [selectedCategory, setSelectedCategory] = useState('')
   const [categories, setCategories] = useState<Category[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -225,7 +241,7 @@ export default function NewTransactionPage() {
   }
 
   if (isLoading) {
-    return <div className="p-4">로딩 중...</div>
+    return <AppLoading />
   }
 
   const filteredCategories = categories.filter(c => c.type === transactionType)

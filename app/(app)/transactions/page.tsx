@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { sortByDefaultOrder } from '@/lib/categories'
 import EditTransactionModal from '@/components/EditTransactionModal'
 import EditRecurringRuleModal from '@/components/EditRecurringRuleModal'
+import AppLoading from '@/components/AppLoading'
 
 interface Transaction {
   id: string
@@ -124,7 +125,9 @@ export default function TransactionsPage() {
   }, [supabase, selectedMonth])
 
   useEffect(() => {
-    fetchTransactions()
+    queueMicrotask(() => {
+      void fetchTransactions()
+    })
   }, [fetchTransactions])
 
   // 카테고리 조회 (수정 시 카테고리 변경용)
@@ -162,7 +165,7 @@ export default function TransactionsPage() {
   })
 
   if (isLoading) {
-    return <div className="p-4">로딩 중...</div>
+    return <AppLoading />
   }
 
   // selectedMonth 의 매월 반복 가상 거래 합성 (이미 실행된 건 제외)

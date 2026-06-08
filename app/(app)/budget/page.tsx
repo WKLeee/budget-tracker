@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import AppLoading from '@/components/AppLoading'
 
 interface Category {
   id: string
@@ -149,7 +150,7 @@ export default function BudgetPage() {
   })
 
   if (isLoading) {
-    return <div className="p-4">로딩 중...</div>
+    return <AppLoading />
   }
 
   const totalBudget = categories.reduce((sum, c) => sum + (c.budget?.amount || 0), 0)

@@ -11,7 +11,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // 클라이언트 구성 (middleware에서는 쿠키로만 작동)
-    let response = NextResponse.next()
+    const response = NextResponse.next()
 
     const supabase = createServerClient(
       supabaseUrl,

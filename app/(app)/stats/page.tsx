@@ -15,13 +15,23 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts'
+import AppLoading from '@/components/AppLoading'
 
 interface Transaction {
   id: string
   type: 'income' | 'expense'
   amount: number
   date: string
-  categories: { name: string; icon: string }
+  categories: { name: string; icon: string } | null
+}
+
+interface RecurringRule {
+  id: string
+  type: 'income' | 'expense'
+  amount: number
+  day_of_month: number
+  last_executed_date: string | null
+  categories: { name: string; icon: string } | null
 }
 
 interface ChartData {
@@ -45,6 +55,33 @@ interface Insights {
   isCurrentMonth: boolean
   daysPassed: number
   daysInMonth: number
+}
+
+function getMonthEnd(monthPrefix: string) {
+  const [year, month] = monthPrefix.split('-').map(Number)
+  const lastDay = new Date(year, month, 0).getDate()
+  return `${monthPrefix}-${String(lastDay).padStart(2, '0')}`
+}
+
+function createVirtualRecurringTransactions(
+  rules: RecurringRule[],
+  monthPrefix: string
+): Transaction[] {
+  const [year, month] = monthPrefix.split('-').map(Number)
+  const daysInMonth = new Date(year, month, 0).getDate()
+
+  return rules
+    .filter(r => !r.last_executed_date || !r.last_executed_date.startsWith(monthPrefix))
+    .map(r => {
+      const day = Math.min(r.day_of_month, daysInMonth)
+      return {
+        id: `recurring-${monthPrefix}-${r.id}`,
+        type: r.type,
+        amount: r.amount,
+        date: `${monthPrefix}-${String(day).padStart(2, '0')}`,
+        categories: r.categories,
+      }
+    })
 }
 
 export default function StatsPage() {
@@ -76,17 +113,26 @@ export default function StatsPage() {
 
         if (!members) return
 
-        // 최근 6개월 데이터
-        const months: string[] = []
+        // 최근 6개월 차트 데이터
+        const chartMonths: string[] = []
         for (let i = 5; i >= 0; i--) {
           const d = new Date()
           d.setMonth(d.getMonth() - i)
           const year = d.getFullYear()
           const month = String(d.getMonth() + 1).padStart(2, '0')
-          months.push(`${year}-${month}`)
+          chartMonths.push(`${year}-${month}`)
         }
 
-        const { data: allTransactions } = await supabase
+        // 월 선택 옵션이 최근 12개월이므로 통계 계산 범위도 12개월로 맞춤
+        const queryMonths = Array.from({ length: 12 }, (_, i) => {
+          const d = new Date()
+          d.setMonth(d.getMonth() - i)
+          const year = d.getFullYear()
+          const month = String(d.getMonth() + 1).padStart(2, '0')
+          return `${year}-${month}`
+        }).sort()
+
+        const { data: allTransactions, error: transactionsError } = await supabase
           .from('transactions')
           .select(`
             id,
@@ -96,114 +142,134 @@ export default function StatsPage() {
             categories (name, icon)
           `)
           .eq('household_id', members.household_id)
-          .gte('date', `${months[0]}-01`)
-          .lte('date', `${months[months.length - 1]}-31`)
+          .gte('date', `${queryMonths[0]}-01`)
+          .lte('date', getMonthEnd(queryMonths[queryMonths.length - 1]))
 
-        if (allTransactions) {
-          // 월별 차트 데이터
-          const monthlyData: Record<string, { 수입: number; 지출: number }> = {}
-          months.forEach(m => {
-            monthlyData[m] = { 수입: 0, 지출: 0 }
-          })
+        if (transactionsError) throw transactionsError
 
-          ;(allTransactions as unknown as Transaction[]).forEach(trans => {
-            const month = trans.date.substring(0, 7)
-            if (monthlyData[month]) {
-              if (trans.type === 'income') {
-                monthlyData[month].수입 += trans.amount || 0
-              } else {
-                monthlyData[month].지출 += trans.amount || 0
-              }
+        const { data: recurringData, error: recurringError } = await supabase
+          .from('recurring_transactions')
+          .select(`
+            id, type, amount, day_of_month, last_executed_date,
+            categories (name, icon)
+          `)
+          .eq('household_id', members.household_id)
+          .eq('enabled', true)
+
+        if (recurringError) throw recurringError
+
+        const recurringRules = (recurringData as unknown as RecurringRule[]) || []
+        const virtualTransactions = queryMonths.flatMap(monthPrefix =>
+          createVirtualRecurringTransactions(recurringRules, monthPrefix)
+        )
+        const statsTransactions = [
+          ...((allTransactions as unknown as Transaction[]) || []),
+          ...virtualTransactions,
+        ]
+
+        // 월별 차트 데이터
+        const monthlyData: Record<string, { 수입: number; 지출: number }> = {}
+        chartMonths.forEach(m => {
+          monthlyData[m] = { 수입: 0, 지출: 0 }
+        })
+
+        statsTransactions.forEach(trans => {
+          const month = trans.date.substring(0, 7)
+          if (monthlyData[month]) {
+            if (trans.type === 'income') {
+              monthlyData[month].수입 += trans.amount || 0
+            } else {
+              monthlyData[month].지출 += trans.amount || 0
             }
+          }
+        })
+
+        const chartDataFormatted = chartMonths.map(m => ({
+          name: m.split('-')[1] + '월',
+          ...monthlyData[m],
+        }))
+
+        setChartData(chartDataFormatted)
+
+        // 선택 월 카테고리별 지출
+        const [year, month] = selectedMonth.split('-')
+        const monthTransactions = statsTransactions.filter(
+          t => t.date.startsWith(`${year}-${month}`) && t.type === 'expense'
+        )
+
+        const categoryTotals: Record<string, number> = {}
+        monthTransactions.forEach(trans => {
+          const catName = trans.categories?.name || '기타'
+          categoryTotals[catName] = (categoryTotals[catName] || 0) + (trans.amount || 0)
+        })
+
+        const categoryDataFormatted = Object.entries(categoryTotals)
+          .map(([name, value]) => ({ name, value }))
+          .sort((a, b) => b.value - a.value)
+
+        setCategoryData(categoryDataFormatted)
+
+        // 인사이트 계산
+        const selY = Number(year)
+        const selM = Number(month)
+        const prevDate = new Date(selY, selM - 2, 1)
+        const prevPrefix = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`
+
+        const prevTransactions = statsTransactions.filter(
+          t => t.date.startsWith(prevPrefix) && t.type === 'expense'
+        )
+
+        const selTotal = monthTransactions.reduce((s, t) => s + (t.amount || 0), 0)
+        const prevTotal = prevTransactions.reduce((s, t) => s + (t.amount || 0), 0)
+        const totalChangePct =
+          prevTotal > 0 ? ((selTotal - prevTotal) / prevTotal) * 100 : null
+
+        // 카테고리별 변화
+        const prevByCat: Record<string, number> = {}
+        prevTransactions.forEach(t => {
+          const n = t.categories?.name || '기타'
+          prevByCat[n] = (prevByCat[n] || 0) + (t.amount || 0)
+        })
+        const allCatNames = new Set([
+          ...Object.keys(categoryTotals),
+          ...Object.keys(prevByCat),
+        ])
+        const topCategoryChanges = Array.from(allCatNames)
+          .map(name => {
+            const sel = categoryTotals[name] || 0
+            const prev = prevByCat[name] || 0
+            const diffPct =
+              prev > 0 ? ((sel - prev) / prev) * 100 : sel > 0 ? Infinity : 0
+            return { name, sel, prev, diffPct }
           })
-
-          const chartDataFormatted = months.map(m => ({
-            name: m.split('-')[1] + '월',
-            ...monthlyData[m],
-          }))
-
-          setChartData(chartDataFormatted)
-
-          // 선택 월 카테고리별 지출
-          const [year, month] = selectedMonth.split('-')
-          const monthTransactions = (allTransactions as unknown as Transaction[]).filter(
-            t => t.date.startsWith(`${year}-${month}`) && t.type === 'expense'
-          )
-
-          const categoryTotals: Record<string, number> = {}
-          monthTransactions.forEach(trans => {
-            const catName = trans.categories?.name || '기타'
-            categoryTotals[catName] = (categoryTotals[catName] || 0) + (trans.amount || 0)
+          .filter(c => c.sel > 0 || c.prev > 0)
+          .sort((a, b) => {
+            const aMag = a.diffPct === Infinity ? Number.MAX_SAFE_INTEGER : Math.abs(a.diffPct)
+            const bMag = b.diffPct === Infinity ? Number.MAX_SAFE_INTEGER : Math.abs(b.diffPct)
+            return bMag - aMag
           })
+          .slice(0, 3)
 
-          const categoryDataFormatted = Object.entries(categoryTotals)
-            .map(([name, value]) => ({ name, value }))
-            .sort((a, b) => b.value - a.value)
+        // 일 평균 + 월말 예상
+        const now = new Date()
+        const isCurrentMonth =
+          selY === now.getFullYear() && selM === now.getMonth() + 1
+        const daysInMonth = new Date(selY, selM, 0).getDate()
+        const daysPassed = isCurrentMonth ? now.getDate() : daysInMonth
+        const dailyAvg = daysPassed > 0 ? selTotal / daysPassed : 0
+        const projection = isCurrentMonth ? dailyAvg * daysInMonth : null
 
-          setCategoryData(categoryDataFormatted)
-
-          // 인사이트 계산
-          const selY = Number(year)
-          const selM = Number(month)
-          const prevDate = new Date(selY, selM - 2, 1)
-          const prevPrefix = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`
-
-          const prevTransactions = (allTransactions as unknown as Transaction[]).filter(
-            t => t.date.startsWith(prevPrefix) && t.type === 'expense'
-          )
-
-          const selTotal = monthTransactions.reduce((s, t) => s + (t.amount || 0), 0)
-          const prevTotal = prevTransactions.reduce((s, t) => s + (t.amount || 0), 0)
-          const totalChangePct =
-            prevTotal > 0 ? ((selTotal - prevTotal) / prevTotal) * 100 : null
-
-          // 카테고리별 변화
-          const prevByCat: Record<string, number> = {}
-          prevTransactions.forEach(t => {
-            const n = t.categories?.name || '기타'
-            prevByCat[n] = (prevByCat[n] || 0) + (t.amount || 0)
-          })
-          const allCatNames = new Set([
-            ...Object.keys(categoryTotals),
-            ...Object.keys(prevByCat),
-          ])
-          const topCategoryChanges = Array.from(allCatNames)
-            .map(name => {
-              const sel = categoryTotals[name] || 0
-              const prev = prevByCat[name] || 0
-              const diffPct =
-                prev > 0 ? ((sel - prev) / prev) * 100 : sel > 0 ? Infinity : 0
-              return { name, sel, prev, diffPct }
-            })
-            .filter(c => c.sel > 0 || c.prev > 0)
-            .sort((a, b) => {
-              const aMag = a.diffPct === Infinity ? Number.MAX_SAFE_INTEGER : Math.abs(a.diffPct)
-              const bMag = b.diffPct === Infinity ? Number.MAX_SAFE_INTEGER : Math.abs(b.diffPct)
-              return bMag - aMag
-            })
-            .slice(0, 3)
-
-          // 일 평균 + 월말 예상
-          const now = new Date()
-          const isCurrentMonth =
-            selY === now.getFullYear() && selM === now.getMonth() + 1
-          const daysInMonth = new Date(selY, selM, 0).getDate()
-          const daysPassed = isCurrentMonth ? now.getDate() : daysInMonth
-          const dailyAvg = daysPassed > 0 ? selTotal / daysPassed : 0
-          const projection = isCurrentMonth ? dailyAvg * daysInMonth : null
-
-          setInsights({
-            selTotal,
-            prevTotal,
-            totalChangePct,
-            dailyAvg,
-            projection,
-            topCategoryChanges,
-            isCurrentMonth,
-            daysPassed,
-            daysInMonth,
-          })
-        }
+        setInsights({
+          selTotal,
+          prevTotal,
+          totalChangePct,
+          dailyAvg,
+          projection,
+          topCategoryChanges,
+          isCurrentMonth,
+          daysPassed,
+          daysInMonth,
+        })
       } catch (error) {
         console.error('통계 조회 실패:', error)
       } finally {
@@ -223,7 +289,7 @@ export default function StatsPage() {
   })
 
   if (isLoading) {
-    return <div className="p-4">로딩 중...</div>
+    return <AppLoading />
   }
 
   const fmt = (n: number) => Math.round(n).toLocaleString()
@@ -424,7 +490,7 @@ export default function StatsPage() {
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value: any) => `${Number(value).toLocaleString()}원`} />
+                <Tooltip formatter={(value: unknown) => `${Number(value).toLocaleString()}원`} />
               </PieChart>
             </ResponsiveContainer>
 

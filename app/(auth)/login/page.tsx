@@ -30,7 +30,7 @@ export default function LoginPage() {
       }
 
       router.push('/dashboard')
-    } catch (err) {
+    } catch {
       setError('로그인 중 오류가 발생했습니다')
     } finally {
       setLoading(false)
