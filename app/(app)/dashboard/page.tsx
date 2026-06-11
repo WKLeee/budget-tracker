@@ -16,7 +16,7 @@ import AppLoading from '@/components/AppLoading'
 
 interface Transaction {
   id: string
-  user_id: string
+  user_id: string | null
   type: 'income' | 'expense'
   amount: number
   memo: string
@@ -29,7 +29,7 @@ interface Transaction {
 
 interface RecurringRule {
   id: string
-  user_id: string
+  user_id: string | null
   type: 'income' | 'expense'
   amount: number
   memo: string | null
@@ -49,12 +49,16 @@ interface Category {
 
 interface Schedule {
   id: string
+  household_id?: string | null
   title: string
   memo: string | null
   date: string
   time: string | null
   category: string | null
   recurrence: string | null
+  is_important: boolean | null
+  important_color: string | null
+  important_order: number | null
 }
 
 export default function DashboardPage() {
@@ -110,7 +114,7 @@ export default function DashboardPage() {
       const [oneTimeRes, recurringRes] = await Promise.all([
         supabase
           .from('schedules')
-          .select('id, title, memo, date, time, category, recurrence')
+          .select('id, household_id, title, memo, date, time, category, recurrence, is_important, important_color, important_order')
           .eq('household_id', hid)
           .or('recurrence.is.null,recurrence.eq.none')
           .gte('date', `${monthPrefix}-01`)
@@ -118,7 +122,7 @@ export default function DashboardPage() {
           .order('date'),
         supabase
           .from('schedules')
-          .select('id, title, memo, date, time, category, recurrence')
+          .select('id, household_id, title, memo, date, time, category, recurrence, is_important, important_color, important_order')
           .eq('household_id', hid)
           .in('recurrence', ['weekly', 'monthly', 'yearly'])
           .lte('date', monthEnd)
@@ -187,14 +191,19 @@ export default function DashboardPage() {
 
         if (transData) {
           const rows = transData as unknown as Transaction[]
-          const { data: profilesData } = await supabase
-            .from('profiles')
-            .select('*')
-            .in('id', [...new Set(rows.map(t => t.user_id))])
+          const profileIds = [...new Set(rows.map(t => t.user_id).filter(Boolean))]
+          const { data: profilesData } = profileIds.length > 0
+            ? await supabase
+                .from('profiles')
+                .select('*')
+                .in('id', profileIds)
+            : { data: [] }
 
           setTransactions(
             rows.map(t => {
-              const profile = profilesData?.find(p => p.id === t.user_id)
+              const profile = t.user_id
+                ? profilesData?.find(p => p.id === t.user_id)
+                : null
               return {
                 ...t,
                 profiles: profile
@@ -480,7 +489,7 @@ export default function DashboardPage() {
                   <p className="text-xs text-gray-500 mt-0.5">
                     {trans.isRecurring
                       ? '예정 (매월 자동 등록)'
-                      : trans.profiles?.nickname || trans.profiles?.email.split('@')[0]}
+                      : trans.profiles?.nickname || trans.profiles?.email.split('@')[0] || '공동'}
                   </p>
                   {trans.memo && (
                     <p className="text-xs text-gray-600 mt-0.5">{trans.memo}</p>
@@ -522,6 +531,7 @@ export default function DashboardPage() {
             setEditingSchedule(null)
             setRefetchTick(t => t + 1)
           }}
+          onChanged={() => setRefetchTick(t => t + 1)}
         />
       )}
 

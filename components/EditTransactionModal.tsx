@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface EditableTransaction {
   id: string
+  user_id?: string | null
   type: 'income' | 'expense'
   amount: number
   memo: string | null
@@ -19,9 +20,15 @@ export interface ModalCategory {
   type: 'income' | 'expense'
 }
 
+export interface ModalMemberOption {
+  id: string
+  label: string
+}
+
 interface Props {
   transaction: EditableTransaction
   categories: ModalCategory[]
+  memberOptions?: ModalMemberOption[]
   supabase: SupabaseClient
   onClose: () => void
   onSaved: () => void
@@ -30,6 +37,7 @@ interface Props {
 export default function EditTransactionModal({
   transaction,
   categories,
+  memberOptions,
   supabase,
   onClose,
   onSaved,
@@ -39,6 +47,7 @@ export default function EditTransactionModal({
   const [categoryId, setCategoryId] = useState(transaction.category_id ?? '')
   const [date, setDate] = useState(transaction.date)
   const [memo, setMemo] = useState(transaction.memo ?? '')
+  const [ownerId, setOwnerId] = useState(transaction.user_id ?? 'shared')
   const [isSaving, setIsSaving] = useState(false)
 
   const filteredCategories = categories.filter(c => c.type === type)
@@ -57,6 +66,9 @@ export default function EditTransactionModal({
         category_id: categoryId,
         date,
         memo,
+        ...(memberOptions
+          ? { user_id: ownerId === 'shared' ? null : ownerId }
+          : {}),
       })
       .eq('id', transaction.id)
     setIsSaving(false)
@@ -121,6 +133,24 @@ export default function EditTransactionModal({
             수입
           </button>
         </div>
+
+        {memberOptions && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">멤버</label>
+            <select
+              value={ownerId}
+              onChange={(e) => setOwnerId(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="shared">공동</option>
+              {memberOptions.map(member => (
+                <option key={member.id} value={member.id}>
+                  {member.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">금액 (원)</label>

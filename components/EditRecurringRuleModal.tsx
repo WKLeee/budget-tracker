@@ -2,10 +2,11 @@
 
 import { useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { ModalCategory } from './EditTransactionModal'
+import type { ModalCategory, ModalMemberOption } from './EditTransactionModal'
 
 export interface EditableRecurringRule {
   id: string
+  user_id?: string | null
   type: 'income' | 'expense'
   amount: number
   memo: string | null
@@ -17,6 +18,7 @@ export interface EditableRecurringRule {
 interface Props {
   rule: EditableRecurringRule
   categories: ModalCategory[]
+  memberOptions?: ModalMemberOption[]
   supabase: SupabaseClient
   onClose: () => void
   onSaved: () => void
@@ -25,6 +27,7 @@ interface Props {
 export default function EditRecurringRuleModal({
   rule,
   categories,
+  memberOptions,
   supabase,
   onClose,
   onSaved,
@@ -35,6 +38,7 @@ export default function EditRecurringRuleModal({
   const [dayOfMonth, setDayOfMonth] = useState(rule.day_of_month)
   const [memo, setMemo] = useState(rule.memo ?? '')
   const [enabled, setEnabled] = useState(rule.enabled)
+  const [ownerId, setOwnerId] = useState(rule.user_id ?? 'shared')
   const [isSaving, setIsSaving] = useState(false)
 
   const filteredCategories = categories.filter(c => c.type === type)
@@ -54,6 +58,9 @@ export default function EditRecurringRuleModal({
         day_of_month: dayOfMonth,
         memo: memo.trim() || null,
         enabled,
+        ...(memberOptions
+          ? { user_id: ownerId === 'shared' ? null : ownerId }
+          : {}),
       })
       .eq('id', rule.id)
     setIsSaving(false)
@@ -118,6 +125,24 @@ export default function EditRecurringRuleModal({
             수입
           </button>
         </div>
+
+        {memberOptions && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">멤버</label>
+            <select
+              value={ownerId}
+              onChange={(e) => setOwnerId(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="shared">공동</option>
+              {memberOptions.map(member => (
+                <option key={member.id} value={member.id}>
+                  {member.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">금액 (원)</label>

@@ -4,6 +4,10 @@ import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { sortByDefaultOrder } from '@/lib/categories'
+import {
+  DEFAULT_IMPORTANT_SCHEDULE_COLOR,
+  IMPORTANT_SCHEDULE_COLORS,
+} from '@/lib/importantScheduleColors'
 import { SCHEDULE_CATEGORIES, getScheduleCategory } from '@/lib/scheduleCategories'
 import AppLoading from '@/components/AppLoading'
 
@@ -23,6 +27,11 @@ interface RecurringRule {
   enabled: boolean
   category_id: string | null
   categories: { name: string; icon: string } | null
+}
+
+interface MemberOption {
+  id: string
+  label: string
 }
 
 function getTodayString() {
@@ -52,6 +61,8 @@ export default function NewTransactionPage() {
   const [amount, setAmount] = useState('')
   const [memo, setMemo] = useState('')
   const [date, setDate] = useState(initialDate)
+  const [transactionOwnerId, setTransactionOwnerId] = useState('shared')
+  const [memberOptions, setMemberOptions] = useState<MemberOption[]>([])
   const [selectedCategory, setSelectedCategory] = useState('')
   const [categories, setCategories] = useState<Category[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -61,6 +72,10 @@ export default function NewTransactionPage() {
   const [schedMemo, setSchedMemo] = useState('')
   const [schedTime, setSchedTime] = useState('')
   const [schedCategory, setSchedCategory] = useState('general')
+  const [schedImportant, setSchedImportant] = useState(false)
+  const [schedImportantColor, setSchedImportantColor] = useState(
+    DEFAULT_IMPORTANT_SCHEDULE_COLOR
+  )
   const [schedRecurrence, setSchedRecurrence] = useState<
     'none' | 'weekly' | 'monthly' | 'yearly'
   >('none')
@@ -85,6 +100,30 @@ export default function NewTransactionPage() {
         }
 
         setHouseholdId(members.household_id)
+        setTransactionOwnerId(user.id)
+
+        const { data: membersData } = await supabase
+          .from('household_members')
+          .select('user_id')
+          .eq('household_id', members.household_id)
+
+        if (membersData && membersData.length > 0) {
+          const memberIds = membersData.map(m => m.user_id)
+          const { data: profilesData } = await supabase
+            .from('profiles')
+            .select('id, email, nickname')
+            .in('id', memberIds)
+
+          setMemberOptions(
+            memberIds.map(id => {
+              const profile = profilesData?.find(p => p.id === id)
+              return {
+                id,
+                label: profile?.nickname || profile?.email?.split('@')[0] || '멤버',
+              }
+            })
+          )
+        }
 
         const { data: catData } = await supabase
           .from('categories')
@@ -131,6 +170,18 @@ export default function NewTransactionPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
+        let importantOrder: number | null = null
+        if (schedImportant) {
+          const { data: lastImportant } = await supabase
+            .from('schedules')
+            .select('important_order')
+            .eq('household_id', householdId)
+            .eq('is_important', true)
+            .order('important_order', { ascending: false, nullsFirst: false })
+            .limit(1)
+          importantOrder = (lastImportant?.[0]?.important_order ?? 0) + 1
+        }
+
         const { error } = await supabase.from('schedules').insert({
           household_id: householdId,
           user_id: user.id,
@@ -140,6 +191,9 @@ export default function NewTransactionPage() {
           memo: schedMemo.trim() || null,
           category: schedCategory,
           recurrence: schedRecurrence,
+          is_important: schedImportant,
+          important_color: schedImportant ? schedImportantColor : null,
+          important_order: importantOrder,
         })
         if (error) {
           alert('일정 저장 실패: ' + error.message)
@@ -185,7 +239,7 @@ export default function NewTransactionPage() {
       if (txRecurrence === 'monthly') {
         const { error } = await supabase.from('recurring_transactions').insert({
           household_id: householdId,
-          user_id: user.id,
+          user_id: transactionOwnerId === 'shared' ? null : transactionOwnerId,
           type: transactionType,
           amount: Math.round(Number(amount)),
           category_id: selectedCategory,
@@ -205,7 +259,7 @@ export default function NewTransactionPage() {
 
       const { error } = await supabase.from('transactions').insert({
         household_id: householdId,
-        user_id: user.id,
+        user_id: transactionOwnerId === 'shared' ? null : transactionOwnerId,
         type: transactionType,
         amount: Math.round(Number(amount)),
         category_id: selectedCategory,
@@ -316,6 +370,23 @@ export default function NewTransactionPage() {
                   수입
                 </button>
               </div>
+            </div>
+
+            {/* 멤버 선택 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">멤버</label>
+              <select
+                value={transactionOwnerId}
+                onChange={(e) => setTransactionOwnerId(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              >
+                <option value="shared">공동</option>
+                {memberOptions.map(member => (
+                  <option key={member.id} value={member.id}>
+                    {member.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* 금액 */}
@@ -431,6 +502,46 @@ export default function NewTransactionPage() {
                 </p>
               )}
             </div>
+
+            <label className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-4 py-3">
+              <span>
+                <span className="block text-sm font-medium text-gray-900">중요 일정</span>
+                <span className="block text-xs text-gray-500 mt-0.5">
+                  일정 탭 최상단에 따로 표시돼요
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={schedImportant}
+                onChange={(e) => setSchedImportant(e.target.checked)}
+                className="h-5 w-5 accent-indigo-600"
+              />
+            </label>
+
+            {schedImportant && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  중요 일정 색상
+                </label>
+                <div className="grid grid-cols-5 gap-2">
+                  {IMPORTANT_SCHEDULE_COLORS.map(color => (
+                    <button
+                      key={color.key}
+                      type="button"
+                      onClick={() => setSchedImportantColor(color.key)}
+                      title={color.label}
+                      aria-label={color.label}
+                      className={`h-10 rounded-lg border-2 transition ${
+                        schedImportantColor === color.key
+                          ? 'border-gray-900 scale-105'
+                          : 'border-white shadow-sm'
+                      }`}
+                      style={{ background: color.background }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div>

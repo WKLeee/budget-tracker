@@ -79,7 +79,7 @@ export default function AppLayout({
       <nav className="fixed bottom-0 left-0 right-0 border-t border-gray-200 bg-white z-50">
         <div className="flex justify-around max-w-full">
           <NavLink href="/dashboard" label="달력" icon="📅" isActive={isActive('/dashboard')} />
-          <NavLink href="/transactions" label="거래" icon="📋" isActive={isActive('/transactions')} />
+          <NavLink href="/schedules" label="일정" icon="⭐" isActive={isActive('/schedules')} />
           <NavLink href={addHref} label="추가" icon="➕" isActive={isActive('/transactions/new')} />
           <NavLink href="/stats" label="통계" icon="📊" isActive={isActive('/stats')} />
           <NavLink href="/settings" label="설정" icon="⚙️" isActive={isActive('/settings')} />
