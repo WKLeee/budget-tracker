@@ -10,6 +10,7 @@ import {
 } from '@/lib/scheduleCategories'
 import { sortByDefaultOrder } from '@/lib/categories'
 import EditTransactionModal from '@/components/EditTransactionModal'
+import type { ModalMemberOption } from '@/components/EditTransactionModal'
 import EditScheduleModal from '@/components/EditScheduleModal'
 import EditRecurringRuleModal from '@/components/EditRecurringRuleModal'
 import AppLoading from '@/components/AppLoading'
@@ -66,6 +67,7 @@ export default function DashboardPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [memberOptions, setMemberOptions] = useState<ModalMemberOption[]>([])
   const [recurringRules, setRecurringRules] = useState<RecurringRule[]>([])
   const [editing, setEditing] = useState<Transaction | null>(null)
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
@@ -151,6 +153,29 @@ export default function DashboardPage() {
 
         const members = memberRows?.[0]
         if (!members) return
+
+        const { data: householdMemberRows } = await supabase
+          .from('household_members')
+          .select('user_id')
+          .eq('household_id', members.household_id)
+
+        if (householdMemberRows && householdMemberRows.length > 0) {
+          const memberIds = householdMemberRows.map(row => row.user_id)
+          const { data: profilesData } = await supabase
+            .from('profiles')
+            .select('id, email, nickname')
+            .in('id', memberIds)
+
+          setMemberOptions(
+            memberIds.map(id => {
+              const profile = profilesData?.find(p => p.id === id)
+              return {
+                id,
+                label: profile?.nickname || profile?.email?.split('@')[0] || '멤버',
+              }
+            })
+          )
+        }
 
         const lastDay = new Date(year, month + 1, 0).getDate()
         const monthEnd = `${monthPrefix}-${String(lastDay).padStart(2, '0')}`
@@ -513,6 +538,7 @@ export default function DashboardPage() {
         <EditTransactionModal
           transaction={editing}
           categories={categories}
+          memberOptions={memberOptions}
           supabase={supabase}
           onClose={() => setEditing(null)}
           onSaved={() => {
