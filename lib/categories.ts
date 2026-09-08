@@ -26,7 +26,7 @@ export const DEFAULT_CATEGORIES: DefaultCategory[] = [
   { name: '주거/공과금', type: 'expense', icon: '🏠' },
   { name: '보험', type: 'expense', icon: '🛡️' },
   { name: '경조사', type: 'expense', icon: '🙏' },
-  { name: '선물', type: 'expense', icon: '🎀' },
+  { name: '선물', type: 'expense', icon: '🎁' },
   { name: '결혼준비', type: 'expense', icon: '💍' },
   { name: '용돈 지급', type: 'expense', icon: '💸' },
   { name: '기타', type: 'expense', icon: '📌' },
