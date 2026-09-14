@@ -15,6 +15,7 @@ export const SCHEDULE_CATEGORIES: ScheduleCategory[] = [
   { key: 'gathering', label: '모임', icon: '🍻', color: '#14b8a6' },
   { key: 'travel', label: '여행', icon: '✈️', color: '#0ea5e9' },
   { key: 'event', label: '이벤트', icon: '🎯', color: '#f59e0b' },
+  { key: 'exercise', label: '운동', icon: '🏃', color: '#22c55e' },
   { key: 'health', label: '건강/병원', icon: '🏥', color: '#10b981' },
   { key: 'other', label: '기타', icon: '📝', color: '#6b7280' },
 ]
