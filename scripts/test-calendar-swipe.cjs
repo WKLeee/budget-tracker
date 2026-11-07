@@ -99,6 +99,20 @@ async function main() {
       assert.equal(await heading.innerText(), `${year + 1}년 1월`)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     })
+    await check('Dragging follows the finger and a short drag settles back', async () => {
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
+      const currentMonth = await heading.innerText()
+      const touch = { identifier: 1, clientX: 250, clientY: y }
+      await calendar.dispatchEvent('touchstart', { touches: [touch] })
+      await calendar.dispatchEvent('touchmove', { touches: [{ ...touch, clientX: 220 }] })
+      const grid = calendar.locator('.grid.gap-0\\.5')
+      assert.ok((await grid.evaluate(element => element.style.transform)).includes('-'))
+      await calendar.dispatchEvent('touchend', { touches: [], changedTouches: [{ ...touch, clientX: 220 }] })
+      await grid.evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)))
+      assert.equal(await grid.evaluate(element => element.style.transform), '')
+      assert.equal(await heading.innerText(), currentMonth)
+    })
     await check('Month animation follows direction and restarts on repeated navigation', async () => {
       await page.emulateMedia({ reducedMotion: 'no-preference' })
       for (const direction of ['다음 달', '다음 달', '이전 달']) {
@@ -112,7 +126,7 @@ async function main() {
           return animation.effect.getKeyframes().map(frame => frame.transform)
         })
         assert.ok(frames, 'Month entry animation should be running')
-        assert.ok(frames[0].includes(direction === '다음 달' ? '28px' : '-28px'))
+        assert.ok(frames[0].includes(direction === '다음 달' ? '40px' : '-40px'))
         await page.screenshot({ path: path.join(process.env.TEMP, 'budget-calendar-transition.png') })
         await grid.evaluate(element => Promise.all(element.getAnimations().map(animation => { animation.play(); return animation.finished })))
       }
@@ -121,10 +135,15 @@ async function main() {
       await page.emulateMedia({ reducedMotion: 'reduce' })
       await calendar.getByRole('button', { name: '다음 달', exact: true }).press('Enter')
       assert.equal(await calendar.locator('.calendar-month-next').evaluate(element => getComputedStyle(element).animationName), 'none')
+      const touch = { identifier: 1, clientX: 250, clientY: y }
+      await calendar.dispatchEvent('touchstart', { touches: [touch] })
+      await calendar.dispatchEvent('touchmove', { touches: [{ ...touch, clientX: 220 }] })
+      assert.equal(await calendar.locator('.calendar-month-next').evaluate(element => element.style.transform), '')
+      await calendar.dispatchEvent('touchcancel', { touches: [] })
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     })
     assert.deepEqual(errors, [])
-    console.log('Completed 12 calendar tests; no live account data was used.')
+    console.log('Completed 13 calendar tests; no live account data was used.')
   } finally { await browser.close() }
 }
 

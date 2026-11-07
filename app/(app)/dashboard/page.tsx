@@ -82,6 +82,7 @@ export default function DashboardPage() {
     axis: 'horizontal' | 'vertical' | null
   } | null>(null)
   const suppressCalendarClickUntil = useRef(0)
+  const calendarGrid = useRef<HTMLDivElement>(null)
   const [selectedDate, setSelectedDate] = useState(() => {
     const n = new Date()
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
@@ -110,9 +111,23 @@ export default function DashboardPage() {
   const goPrevYear = () => goTo(viewYear - 1, viewMonth)
   const goNextYear = () => goTo(viewYear + 1, viewMonth)
 
+  const resetCalendarDrag = () => {
+    const grid = calendarGrid.current
+    if (!grid) return
+    const transform = grid.style.transform
+    grid.style.transform = ''
+    if (transform && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      grid.animate(
+        [{ transform }, { transform: 'translate3d(0, 0, 0)' }],
+        { duration: 360, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }
+      )
+    }
+  }
+
   const startCalendarSwipe = (event: TouchEvent<HTMLDivElement>) => {
     calendarGesture.current = null
     suppressCalendarClickUntil.current = 0
+    resetCalendarDrag()
     if (event.touches.length !== 1) return
     const touch = event.touches[0]
     calendarGesture.current = { id: touch.identifier, x: touch.clientX, y: touch.clientY, axis: null }
@@ -123,6 +138,7 @@ export default function DashboardPage() {
     if (!gesture) return
     if (event.touches.length !== 1) {
       calendarGesture.current = null
+      resetCalendarDrag()
       return
     }
     const touch = event.touches[0]
@@ -131,17 +147,33 @@ export default function DashboardPage() {
     if (!gesture.axis && Math.max(dx, dy) >= 10) {
       gesture.axis = dx > dy * 1.5 ? 'horizontal' : 'vertical'
     }
+    const grid = calendarGrid.current
+    if (gesture.axis === 'horizontal' && grid && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      grid.getAnimations().forEach(animation => animation.cancel())
+      // Resistance keeps the calendar attached to the finger without moving it off-screen.
+      const offset = Math.sign(touch.clientX - gesture.x) * 72 * (1 - Math.exp(-dx / 180))
+      grid.style.transform = `translate3d(${offset}px, 0, 0)`
+    }
   }
 
   const endCalendarSwipe = (event: TouchEvent<HTMLDivElement>) => {
     const gesture = calendarGesture.current
     calendarGesture.current = null
-    if (!gesture || gesture.axis === 'vertical' || event.touches.length !== 0) return
+    if (!gesture || gesture.axis === 'vertical' || event.touches.length !== 0) {
+      resetCalendarDrag()
+      return
+    }
     const touch = Array.from(event.changedTouches).find(t => t.identifier === gesture.id)
-    if (!touch) return
+    if (!touch) {
+      resetCalendarDrag()
+      return
+    }
     const dx = touch.clientX - gesture.x
     const dy = touch.clientY - gesture.y
-    if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy) * 1.5) return
+    if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy) * 1.5) {
+      resetCalendarDrag()
+      return
+    }
 
     // A touch swipe may be followed by a synthetic click on a day or arrow.
     suppressCalendarClickUntil.current = Date.now() + 500
@@ -375,7 +407,10 @@ export default function DashboardPage() {
         onTouchStart={startCalendarSwipe}
         onTouchMove={moveCalendarSwipe}
         onTouchEnd={endCalendarSwipe}
-        onTouchCancel={() => { calendarGesture.current = null }}
+        onTouchCancel={() => {
+          calendarGesture.current = null
+          resetCalendarDrag()
+        }}
         onClickCapture={event => {
           if (event.detail !== 0 && Date.now() < suppressCalendarClickUntil.current) {
             event.preventDefault()
@@ -440,6 +475,7 @@ export default function DashboardPage() {
 
         <div
           key={monthPrefix}
+          ref={calendarGrid}
           className={`grid grid-cols-7 gap-0.5 ${monthDirection ? `calendar-month-${monthDirection}` : ''}`}
         >
           {cells.map((day, idx) => {
