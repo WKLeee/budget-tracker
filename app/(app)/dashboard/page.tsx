@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { TouchEvent } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   getScheduleCategory,
@@ -74,6 +75,13 @@ export default function DashboardPage() {
   const [editingRule, setEditingRule] = useState<RecurringRule | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [refetchTick, setRefetchTick] = useState(0)
+  const calendarGesture = useRef<{
+    id: number
+    x: number
+    y: number
+    axis: 'horizontal' | 'vertical' | null
+  } | null>(null)
+  const suppressCalendarClickUntil = useRef(0)
   const [selectedDate, setSelectedDate] = useState(() => {
     const n = new Date()
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
@@ -99,6 +107,45 @@ export default function DashboardPage() {
   const goNextMonth = () => goTo(viewYear, viewMonth + 1)
   const goPrevYear = () => goTo(viewYear - 1, viewMonth)
   const goNextYear = () => goTo(viewYear + 1, viewMonth)
+
+  const startCalendarSwipe = (event: TouchEvent<HTMLDivElement>) => {
+    calendarGesture.current = null
+    suppressCalendarClickUntil.current = 0
+    if (event.touches.length !== 1) return
+    const touch = event.touches[0]
+    calendarGesture.current = { id: touch.identifier, x: touch.clientX, y: touch.clientY, axis: null }
+  }
+
+  const moveCalendarSwipe = (event: TouchEvent<HTMLDivElement>) => {
+    const gesture = calendarGesture.current
+    if (!gesture) return
+    if (event.touches.length !== 1) {
+      calendarGesture.current = null
+      return
+    }
+    const touch = event.touches[0]
+    const dx = Math.abs(touch.clientX - gesture.x)
+    const dy = Math.abs(touch.clientY - gesture.y)
+    if (!gesture.axis && Math.max(dx, dy) >= 10) {
+      gesture.axis = dx > dy * 1.5 ? 'horizontal' : 'vertical'
+    }
+  }
+
+  const endCalendarSwipe = (event: TouchEvent<HTMLDivElement>) => {
+    const gesture = calendarGesture.current
+    calendarGesture.current = null
+    if (!gesture || gesture.axis === 'vertical' || event.touches.length !== 0) return
+    const touch = Array.from(event.changedTouches).find(t => t.identifier === gesture.id)
+    if (!touch) return
+    const dx = touch.clientX - gesture.x
+    const dy = touch.clientY - gesture.y
+    if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy) * 1.5) return
+
+    // A touch swipe may be followed by a synthetic click on a day or arrow.
+    suppressCalendarClickUntil.current = Date.now() + 500
+    if (dx < 0) goNextMonth()
+    else goPrevMonth()
+  }
 
   useEffect(() => {
     window.dispatchEvent(
@@ -318,7 +365,22 @@ export default function DashboardPage() {
   return (
     <div className="p-4 max-w-md mx-auto">
       {/* 달력 */}
-      <div className="mb-6">
+      <div
+        className="mb-6"
+        role="region"
+        aria-label="달력"
+        style={{ touchAction: 'pan-y pinch-zoom' }}
+        onTouchStart={startCalendarSwipe}
+        onTouchMove={moveCalendarSwipe}
+        onTouchEnd={endCalendarSwipe}
+        onTouchCancel={() => { calendarGesture.current = null }}
+        onClickCapture={event => {
+          if (event.detail !== 0 && Date.now() < suppressCalendarClickUntil.current) {
+            event.preventDefault()
+            event.stopPropagation()
+          }
+        }}
+      >
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-1">
             <button
