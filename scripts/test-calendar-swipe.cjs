@@ -99,8 +99,32 @@ async function main() {
       assert.equal(await heading.innerText(), `${year + 1}년 1월`)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     })
+    await check('Month animation follows direction and restarts on repeated navigation', async () => {
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
+      for (const direction of ['다음 달', '다음 달', '이전 달']) {
+        await calendar.getByRole('button', { name: direction, exact: true }).press('Enter')
+        const grid = calendar.locator(direction === '다음 달' ? '.calendar-month-next' : '.calendar-month-previous')
+        const frames = await grid.evaluate(element => {
+          const animation = element.getAnimations()[0]
+          if (!animation) return null
+          animation.pause()
+          animation.currentTime = 80
+          return animation.effect.getKeyframes().map(frame => frame.transform)
+        })
+        assert.ok(frames, 'Month entry animation should be running')
+        assert.ok(frames[0].includes(direction === '다음 달' ? '28px' : '-28px'))
+        await page.screenshot({ path: path.join(process.env.TEMP, 'budget-calendar-transition.png') })
+        await grid.evaluate(element => Promise.all(element.getAnimations().map(animation => { animation.play(); return animation.finished })))
+      }
+    })
+    await check('Reduced-motion preference disables the transition', async () => {
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await calendar.getByRole('button', { name: '다음 달', exact: true }).press('Enter')
+      assert.equal(await calendar.locator('.calendar-month-next').evaluate(element => getComputedStyle(element).animationName), 'none')
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    })
     assert.deepEqual(errors, [])
-    console.log('Completed 10 calendar tests; no live account data was used.')
+    console.log('Completed 12 calendar tests; no live account data was used.')
   } finally { await browser.close() }
 }
 

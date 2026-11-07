@@ -90,6 +90,7 @@ export default function DashboardPage() {
   const now = new Date()
   const [viewYear, setViewYear] = useState(now.getFullYear())
   const [viewMonth, setViewMonth] = useState(now.getMonth()) // 0-indexed
+  const [monthDirection, setMonthDirection] = useState<'next' | 'previous' | null>(null)
   const year = viewYear
   const month = viewMonth
   const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`
@@ -97,6 +98,7 @@ export default function DashboardPage() {
 
   const goTo = (y: number, m: number) => {
     const d = new Date(y, m, 1)
+    setMonthDirection(d.getTime() > new Date(viewYear, viewMonth, 1).getTime() ? 'next' : 'previous')
     setViewYear(d.getFullYear())
     setViewMonth(d.getMonth())
     setSelectedDate(
@@ -366,7 +368,7 @@ export default function DashboardPage() {
     <div className="p-4 max-w-md mx-auto">
       {/* 달력 */}
       <div
-        className="mb-6"
+        className="mb-6 overflow-hidden"
         role="region"
         aria-label="달력"
         style={{ touchAction: 'pan-y pinch-zoom' }}
@@ -436,7 +438,10 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        <div className="grid grid-cols-7 gap-0.5">
+        <div
+          key={monthPrefix}
+          className={`grid grid-cols-7 gap-0.5 ${monthDirection ? `calendar-month-${monthDirection}` : ''}`}
+        >
           {cells.map((day, idx) => {
             if (day === null) return <div key={`blank-${idx}`} />
 
